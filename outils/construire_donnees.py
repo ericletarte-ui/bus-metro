@@ -6,6 +6,7 @@ Utilisation : python3 outils/construire_donnees.py gtfs_stm.zip site/donnees [nb
 Fichiers produits dans le dossier de sortie :
   reseau.json            lignes de bus, arrêts, stations de métro
   jours.json             pour chaque date de service (AAAAMMJJ), le fichier d'horaires à lire
+  parcours.json          pour chaque sens de ligne, les suites d'arrêts et leurs temps de parcours
   passages-<clé>.json    pour chaque arrêt, les passages prévus par ligne
 
 Format d'un fichier de passages : une liste alignée sur reseau.stops.
@@ -127,6 +128,27 @@ def construire(chemin_zip, sortie, nb_jours=FUSEAU_JOURS, debut=None):
         stops_out.append([(s.get("stop_code") or sid).strip(), s["stop_name"].strip(), round(float(s["stop_lat"]), 5), round(float(s["stop_lon"]), 5)])
 
     # Voyages compactés : on retire le terminus (on n'y monte pas) et les arrêts sans montée
+    # Parcours : pour chaque sens de ligne, les suites d'arrêts les plus courantes
+    # avec le temps médian depuis le premier arrêt (pour « les arrêts suivants »).
+    motifs = defaultdict(lambda: defaultdict(list))
+    for tid, v in par_voyage.items():
+        v.sort()
+        seq = tuple(idx_arret[x[1]] for x in v)
+        t0 = v[0][2]
+        motifs[trip_ligne[tid]][seq].append([x[2] - t0 for x in v])
+    parcours = []
+    for li in range(len(lignes)):
+        par_seq = motifs.get(li, {})
+        top = sorted(par_seq.items(), key=lambda kv: -len(kv[1]))
+        garde = []
+        for seq, offs in top[:4]:
+            if garde and len(offs) < 0.1 * len(top[0][1]):
+                break
+            med = [sorted(o[j] for o in offs)[len(offs) // 2] for j in range(len(seq))]
+            garde.append([list(seq), med, len(offs)])
+        parcours.append(garde)
+    del motifs
+
     compacts = {}
     for tid, v in par_voyage.items():
         v.sort()
@@ -188,6 +210,8 @@ def construire(chemin_zip, sortie, nb_jours=FUSEAU_JOURS, debut=None):
     }
     with open(os.path.join(sortie, "reseau.json"), "w", encoding="utf-8") as f:
         json.dump(reseau, f, ensure_ascii=False, separators=(",", ":"))
+    with open(os.path.join(sortie, "parcours.json"), "w", encoding="utf-8") as f:
+        json.dump(parcours, f, separators=(",", ":"))
     with open(os.path.join(sortie, "jours.json"), "w", encoding="utf-8") as f:
         json.dump(jours, f, separators=(",", ":"))
 

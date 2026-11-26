@@ -135,3 +135,19 @@ nav.tabs .wrap{grid-template-columns:repeat(2,1fr)}
 .favbtn[aria-pressed="true"]{color:var(--accent);border-color:var(--accent)}
 .favbtn[aria-pressed="true"] svg{fill:currentColor}
 .sheet .dist{white-space:normal}
+
+/* Trajet d'un bus */
+.times button{background:var(--chip);color:var(--ink);border:none;border-radius:6px;padding:4px 8px;font:inherit;cursor:pointer}
+.times button.first{background:var(--accent);color:var(--accent-ink)}
+.trajet h2{margin:4px 0 8px}
+.arrets{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px 14px}
+.arrets li{display:grid;grid-template-columns:48px 16px 1fr;gap:10px;align-items:center;min-height:34px;position:relative}
+.arrets .h{font-family:var(--f-num);font-variant-numeric:tabular-nums;font-size:17px;color:var(--muted);text-align:right}
+.arrets .pt{width:10px;height:10px;border-radius:50%;background:var(--surface);border:2px solid var(--accent);justify-self:center;z-index:1}
+.arrets li::before{content:"";position:absolute;left:65px;top:0;bottom:0;width:2px;background:var(--accent);opacity:.35}
+.arrets li.ici::before{top:50%}
+.arrets li.fin::before{bottom:50%}
+.arrets li.ici .pt,.arrets li.fin .pt{background:var(--accent)}
+.arrets li.ici .h{color:var(--ink);font-weight:700}
+.arrets .nm{font-size:15px;min-width:0}
+.arrets .nm small{color:var(--muted)}

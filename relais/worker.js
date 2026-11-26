@@ -7,6 +7,9 @@
  * GET /passages?arrets=51880,52105
  *   -> { maj: <epoch s>, passages: { "51880|80": [{ t: <epoch s> }, ...], ... } }
  *
+ * GET /voyage?arret=51880&ligne=80&t=<epoch s>
+ *   -> { maj, arrets: [["51880", <epoch s>], ["51881", ...], ...] }  (le bus le plus proche de t, à partir de cet arrêt)
+ *
  * Le flux GTFS-realtime de la STM est lu au plus une fois toutes les 25 secondes,
  * pour rester loin du quota (10 000 requêtes par jour).
  */
@@ -25,6 +28,26 @@ export default {
       "Vary": "Origin",
     };
     if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+    if (url.pathname === "/voyage") {
+      // Les arrêts suivants du bus d'une ligne qui passe à un arrêt vers l'heure t
+      const arret = url.searchParams.get("arret") || "", ligne = url.searchParams.get("ligne") || "";
+      const t = +url.searchParams.get("t") || Math.floor(Date.now() / 1000);
+      try {
+        const flux = await lireFlux(env, ctx);
+        let meilleur = null, ecart = 1e9;
+        for (const v of flux.voyages) {
+          if (v.r !== ligne) continue;
+          const j = v.s.findIndex((x) => x[0] === arret);
+          if (j < 0) continue;
+          const e = Math.abs(v.s[j][1] - t);
+          if (e < ecart) { ecart = e; meilleur = v.s.slice(j); }
+        }
+        if (!meilleur || ecart > 600) return Response.json({ arrets: null }, { headers: { ...cors, "Cache-Control": "no-store" } });
+        return Response.json({ maj: flux.maj, arrets: meilleur }, { headers: { ...cors, "Cache-Control": "no-store" } });
+      } catch (e) {
+        return Response.json({ erreur: "flux STM indisponible" }, { status: 502, headers: cors });
+      }
+    }
     if (url.pathname !== "/passages") return new Response("Relais Bus Métro", { headers: cors });
 
     const arrets = (url.searchParams.get("arrets") || "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 60);
@@ -61,9 +84,15 @@ async function lireFlux(env, ctx) {
 /* Regroupe les prochaines arrivées par arrêt puis par ligne */
 function indexer(feed) {
   const maintenant = Math.floor(Date.now() / 1000);
-  const index = {};
+  const index = {}, voyages = [];
   for (const tu of feed.trips) {
     if (!tu.route) continue;
+    const suite = [];
+    for (const s of tu.stops) {
+      const t = s.depart || s.arrivee;
+      if (t && s.arret && !s.annule && t >= maintenant - 60) suite.push([s.arret, t]);
+    }
+    if (suite.length) voyages.push({ r: tu.route, s: suite });
     for (const s of tu.stops) {
       const t = s.depart || s.arrivee;
       if (!t || !s.arret || t < maintenant - 60 || t > maintenant + 3 * 3600 || s.annule) continue;
@@ -72,7 +101,7 @@ function indexer(feed) {
     }
   }
   for (const a in index) for (const l in index[a]) index[a][l] = index[a][l].sort((x, y) => x.t - y.t).slice(0, 4);
-  return { maj: feed.temps || maintenant, index };
+  return { maj: feed.temps || maintenant, index, voyages };
 }
 
 /* ---------- Lecture minimale du format protobuf GTFS-realtime ---------- */

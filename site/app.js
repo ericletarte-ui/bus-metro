@@ -104,10 +104,10 @@ function nearStops(lat,lon,radius){
 function upcoming(stopIdx,e,min,line){
   var s=R.stops[stopIdx],rt=rtFor(s[0],line[0]);
   if(rt&&rt.length){
-    var nowMs=Date.now(),list=rt.filter(function(x){return x.h===undefined||dirKey(x.h)===dirKey(line[1])}).map(function(x){return{m:min+(x.t*1000-nowMs)/60000,live:true,h:line[1]}}).filter(function(x){return x.m>=min-0.5});
+    var nowMs=Date.now(),list=rt.filter(function(x){return x.h===undefined||dirKey(x.h)===dirKey(line[1])}).map(function(x){return{m:min+(x.t*1000-nowMs)/60000,live:true,h:line[1],l:e.l,t:x.t}}).filter(function(x){return x.m>=min-0.5});
     if(list.length)return list;
   }
-  return e.t.filter(function(m){return m>=Math.floor(min)}).map(function(m){return{m:m,h:line[1]}});
+  return e.t.filter(function(m){return m>=Math.floor(min)}).map(function(m){return{m:m,h:line[1],l:e.l}});
 }
 
 function routeGroups(t,radius){
@@ -252,20 +252,72 @@ function renderLignes(t){
   return {html:h,codes:codes};
 }
 
-function lineSheet(num){
+var SHEET_EV=null,SHEET_STOP=null;
+function lineSheet(num,pick){
   var t=now(),g=(state.view==="lignes"||!GROUPS[num])?favGroup(num,t):GROUPS[num];
   if(state.view!=="lignes"&&GROUPS[num]){var fresh=routeGroups(t,state.radius).groups.filter(function(x){return x.num===num})[0];if(fresh)g=fresh}
   var h='<h3>Ligne '+esc(num)+(g.name?' · '+esc(g.name):'')+'</h3>';
   h+='<button class="favbtn" type="button" data-fav="'+esc(num)+'" aria-pressed="'+isFav(num)+'">'+STAR+(isFav(num)?' Dans mes lignes (retirer)':' Ajouter à mes lignes')+'</button>';
   if(g.keys&&g.keys.length>1)h+='<div class="seg" role="group" aria-label="Sens">'+g.keys.map(function(k){return '<button type="button" data-fd="'+esc(num)+'|'+esc(k)+'" aria-pressed="'+(k===g.cur)+'">'+esc(dirLabel(k))+'</button>'}).join("")+'</div>';
   if(!g.sel){h+='<div class="none">Pas de service aujourd\'hui selon l\'horaire.</div>';openSheet(h,num);return}
-  var s=R.stops[g.sel.stop],ev=g.sel.ev;
+  var s=R.stops[g.sel.stop],ev=g.sel.ev,j0=Math.min(pick||0,Math.max(0,ev.length-1));
+  SHEET_EV=ev;SHEET_STOP=g.sel.stop;
   h+='<div class="dist">Arrêt '+esc(s[1])+' ('+esc(s[0])+') · '+fmtDist(g.sel.d)+'</div>';
-  h+='<div class="times">'+(ev.length?ev.slice(0,40).map(function(x,j){return '<span'+(j===0?' class="first"':'')+'>'+(x.live?'● ':'')+hhmm(Math.round(x.m))+'</span>'}).join(""):'<span>Plus de passage aujourd\'hui</span>')+'</div>';
-  if(ev.some(function(x){return x.live}))h+='<p class="foot">● : heure en direct de la STM. Les autres sont les heures prévues.</p>';
-  h+='<button class="ibtn" style="color:var(--accent);border-color:var(--line);align-self:flex-start" type="button" data-stop="'+g.sel.stop+'">Tous les bus à cet arrêt</button>';
+  h+='<div class="times" role="group" aria-label="Passages, touche une heure pour voir le trajet">'+(ev.length?ev.slice(0,8).map(function(x,j){return '<button type="button" data-trip="'+j+'"'+(j===j0?' class="first" aria-pressed="true"':' aria-pressed="false"')+'>'+(x.live?'● ':'')+hhmm(Math.round(x.m))+'</button>'}).join(""):'<span>Plus de passage aujourd\'hui</span>')+'</div>';
+  if(ev.some(function(x){return x.live}))h+='<p class="foot">● : heure en direct de la STM. Les autres sont les heures prévues. Touche une heure pour voir le trajet de ce bus.</p>';
+  else if(ev.length)h+='<p class="foot">Touche une heure pour voir le trajet de ce bus.</p>';
+  if(ev.length)h+='<div id="trajet" class="trajet"><div class="none">Chargement du trajet…</div></div>';
+  h+='<button class="ibtn" style="color:var(--accent);border-color:var(--line);align-self:flex-start" type="button" data-stop="'+g.sel.stop+'">Toute la journée à cet arrêt</button>';
   openSheet(h,num);
+  if(ev.length)showTrip(j0);
 }
+
+/* ---------- Trajet d'un bus : les arrêts suivants ---------- */
+var PARC=null,CODE=null;
+function loadParcours(){
+  if(PARC)return Promise.resolve(PARC);
+  return getJSON("donnees/parcours.json").then(function(p){PARC=p;return p});
+}
+function codeIndex(c){
+  if(!CODE){CODE={};R.stops.forEach(function(s,i){CODE[s[0]]=i})}
+  return CODE[c];
+}
+/* Arrêts suivants selon l'horaire prévu : le parcours le plus courant qui passe par cet arrêt */
+function staticTrip(stopIdx,lineIdx,depMin){
+  var best=null;
+  (PARC[lineIdx]||[]).forEach(function(p){var k=p[0].indexOf(stopIdx);if(k>=0&&k<p[0].length-1&&(!best||p[2]>best.p[2]))best={p:p,k:k}});
+  if(!best)return null;
+  var seq=best.p[0],off=best.p[1],k=best.k;
+  return seq.slice(k).map(function(si,j){return{i:si,m:depMin+off[k+j]-off[k]}});
+}
+function showTrip(j){
+  var box=document.getElementById("trajet"),x=SHEET_EV&&SHEET_EV[j];if(!box||!x)return;
+  document.querySelectorAll("[data-trip]").forEach(function(b){var on=+b.dataset.trip===j;b.classList.toggle("first",on);b.setAttribute("aria-pressed",on)});
+  var stop=SHEET_STOP,line=R.lines[x.l],t=now();
+  var render=function(list,live){
+    if(document.getElementById("trajet")!==box)return;
+    if(!list||!list.length){box.innerHTML='<div class="none">Trajet indisponible pour ce bus.</div>';return}
+    var h='<h2>Trajet du bus de '+hhmm(Math.round(x.m))+(live?' · en direct':' · horaire prévu')+'</h2><ol class="arrets">';
+    list.forEach(function(a,n){
+      var s=R.stops[a.i];if(!s)return;
+      var metro=/^Station /.test(s[1]);
+      h+='<li class="'+(n===0?'ici':'')+(n===list.length-1?' fin':'')+'"><span class="h">'+hhmm(Math.round(a.m))+'</span><span class="pt" aria-hidden="true"></span><span class="nm">'+(metro?'<b>':'')+esc(s[1])+(metro?'</b>':'')+(n===0?' <small>(ton arrêt)</small>':'')+(n===list.length-1?' <small>(terminus)</small>':'')+'</span></li>';
+    });
+    box.innerHTML=h+'</ol>';
+  };
+  box.innerHTML='<div class="none">Chargement du trajet…</div>';
+  var fallback=function(){loadParcours().then(function(){render(staticTrip(stop,x.l,Math.round(x.m)),false)}).catch(function(){render(null)})};
+  if(x.live&&CFG.relaisTempsReel){
+    var url=CFG.relaisTempsReel.replace(/\/$/,"")+"/voyage?arret="+encodeURIComponent(R.stops[stop][0])+"&ligne="+encodeURIComponent(line[0])+"&t="+x.t;
+    fetch(url).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(d){
+      if(!d.arrets||!d.arrets.length)throw 0;
+      var nowMs=Date.now(),list=d.arrets.map(function(a){return{i:codeIndex(a[0]),m:t.min+(a[1]*1000-nowMs)/60000}}).filter(function(a){return a.i!==undefined});
+      render(list,true);
+    }).catch(fallback);
+  }else fallback();
+}
+
+
 
 var lastCodes=[];
 function paint(){
@@ -370,6 +422,7 @@ document.addEventListener("click",function(e){
   }
   if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");state.favDir[f[0]]=f[1];store("bm_favdir",state.favDir);paint();if(SHEET_LINE===f[0]&&!document.getElementById("sheet").hidden)lineSheet(f[0]);return}
   if((b=e.target.closest("[data-line]"))){lineSheet(b.dataset.line);return}
+  if((b=e.target.closest("[data-trip]"))){showTrip(+b.dataset.trip);return}
   if((b=e.target.closest("[data-r]"))){state.radius=+b.dataset.r;store("bm_radius",state.radius);b.parentNode.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});paint();refreshRealtime();return}
   if((b=e.target.closest("nav.tabs [data-v]"))){state.view=b.dataset.v;store("bm_view",state.view);paint();window.scrollTo(0,0);setTimeout(refreshRealtime,50);return}
   if((b=e.target.closest("[data-install]"))){if(installEvt){installEvt.prompt();installEvt=null;document.getElementById("banner").innerHTML=""}return}
