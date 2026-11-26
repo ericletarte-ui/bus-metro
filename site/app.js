@@ -119,7 +119,9 @@ function routeGroups(t,radius){
       var d=g[num].dirs[k];
       if(!d)d=g[num].dirs[k]={stop:n.i,d:n.d,ev:[]};
       if(d.stop!==n.i)return;
-      d.ev=d.ev.concat(upcoming(n.i,e,t.min,L));
+      var up=upcoming(n.i,e,t.min,L);
+      if(up.length&&up[0].live){if(d.rt)return;d.rt=true}
+      d.ev=d.ev.concat(up);
     });
   });
   var out=Object.keys(g).map(function(num){
@@ -212,8 +214,11 @@ function renderLignes(t){
     if(!keys.length)h+='<div class="none">Pas de service aujourd\'hui selon l\'horaire.</div>';
     keys.filter(function(k){return k===cur}).forEach(function(k){
       var b=best[k],s=R.stops[b.i];codes.push(s[0]);
+      var rtShown=false;
       stopEvents(b.i).filter(function(e){return R.lines[e.l][0]===num&&dirKey(R.lines[e.l][1])===k}).forEach(function(e){
-        h+=depRow(R.lines[e.l],upcoming(b.i,e,t.min,R.lines[e.l]),t.min);
+        var up=upcoming(b.i,e,t.min,R.lines[e.l]);
+        if(up.length&&up[0].live){if(rtShown)return;rtShown=true}
+        h+=depRow(R.lines[e.l],up,t.min);
       });
       h+='<button class="stoplink" style="text-align:left" type="button" data-stop="'+b.i+'">'+esc(s[1])+' · '+fmtDist(b.d)+'</button>';
     });
