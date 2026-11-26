@@ -343,9 +343,14 @@ function paint(){
   ready(t).then(function(ok){
     var out=state.view==="lignes"?renderLignes(t):renderAutour(t);
     var pre=ok?"":'<div class="card none">Les horaires d\'aujourd\'hui ne sont pas encore chargés. Ils se mettent à jour chaque nuit ; réessaie un peu plus tard.</div>';
-    v.innerHTML=pre+out.html+'<p class="foot">Horaires : '+V.reseau+' (données ouvertes'+(VILLE==="stm"?', CC BY 4.0':'')+')'+(R.feed?', version '+esc(R.feed.slice(0,8)):'')+'.</p>';
+    v.innerHTML=pre+out.html+'<p class="foot">'+credit()+'</p>';
     lastCodes=out.codes;
   }).catch(function(e){if(e==="ville")return;if(window.console)console.error(e);v.innerHTML='<div class="card none">Impossible de charger les horaires. Vérifie ta connexion et rouvre l\'app.</div>'});
+}
+function dateFeed(){var f=String(R.feed||"");return /^\d{8}/.test(f)?f.slice(6,8).replace(/^0/,"")+" "+["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"][+f.slice(4,6)-1]+" "+f.slice(0,4):f}
+function credit(){
+  if(VILLE==="rtc")return "Application intégrant de l'information publique du Réseau de transport de la Capitale, mise à jour le "+esc(dateFeed())+".";
+  return "Horaires : STM (données ouvertes, CC BY 4.0)"+(R.feed?", version "+esc(String(R.feed).slice(0,8)):"")+".";
 }
 function renderClock(t){
   var live=RT.ok&&Date.now()-RT.at<120000;
