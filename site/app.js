@@ -20,7 +20,7 @@ var state={
 (function restore(){
   var p=store("bm_place"); if(p&&typeof p.lat==="number")state.place=p;
   var g=store("bm_gps"); if(g===false)state.gps=false;
-  var v=store("bm_view"); if(v)state.view=v;
+  var v=store("bm_view"); if(v==="lignes")state.view=v;
   var r=store("bm_radius"); if(r)state.radius=r;
   var f=store("bm_favs"); if(Array.isArray(f))state.favs=f;
   var d=store("bm_favdir")||store("pp_favdir"); if(d&&typeof d==="object")state.favDir=d;
@@ -153,14 +153,29 @@ function bigMins(ev,min){
   return h;
 }
 function vers(h){return "vers "+String(h).replace(/^(Nord|Sud|Est|Ouest)\b/,function(x){return x.toLowerCase()})}
-function routeCard(r,min){
-  var s=R.stops[r.sel.stop],ev=r.sel.ev,head=ev.length?ev[0].h:r.cur;
-  var h='<article class="rc'+(ev.length?'':' off')+'">';
-  h+='<div class="rc-top"><div class="'+badgeCls(r.num)+' lg">'+esc(r.num)+'</div><div class="rc-name"><b>'+esc(r.name)+'</b><span>'+esc(vers(head))+'</span></div><div class="rc-time">'+bigMins(ev,min)+'</div></div>';
-  h+='<div class="rc-bot"><div class="rc-act"><button class="star" type="button" data-fav="'+esc(r.num)+'" aria-pressed="'+isFav(r.num)+'" aria-label="'+(isFav(r.num)?"Retirer la ligne "+esc(r.num)+" de mes lignes":"Ajouter la ligne "+esc(r.num)+" à mes lignes")+'">'+STAR+'</button>';
-  if(r.keys.length>1)h+='<div class="seg sm" role="group" aria-label="Sens de la ligne '+esc(r.num)+'">'+r.keys.map(function(k){return '<button type="button" data-fd="'+esc(r.num)+'|'+esc(k)+'" aria-pressed="'+(k===r.cur)+'">'+esc(k)+'</button>'}).join("")+'</div>';
-  h+='</div><button class="stoplink" type="button" data-stop="'+r.sel.stop+'">'+esc(s[1])+' · '+fmtDist(r.sel.d)+'</button></div>';
-  return h+'</article>';
+function dirLabel(k){var x=String(k).toLowerCase();return x==="nord"||x==="sud"?"Vers le "+x:x==="est"||x==="ouest"?"Vers l'"+x:"Vers "+k}
+function walkMin(d){return Math.max(1,Math.round(d/WALK))+" min à pied"}
+function shortWait(x,min){var d=Math.round(x.m-min);return d<60?String(Math.max(0,d)):hhmm(Math.round(x.m))}
+function swapBtn(r){
+  if(r.keys.length<2)return "";
+  var nk=r.keys[(r.keys.indexOf(r.cur)+1)%r.keys.length];
+  return '<button class="swap" type="button" data-fd="'+esc(r.num)+'|'+esc(nk)+'" aria-label="Afficher la ligne '+esc(r.num)+' '+esc(dirLabel(nk).toLowerCase())+'">⇅ '+esc(dirLabel(nk).replace(/^Vers /,"Voir "))+'</button>';
+}
+function isSoon(r,min){var e=r.sel.ev[0];return !!e&&e.m-min<60}
+function rowHTML(r,min){
+  var s=R.stops[r.sel.stop],ev=r.sel.ev,soon=isSoon(r,min);
+  var h='<div class="r'+(soon?'':' lt')+'" role="button" tabindex="0" data-line="'+esc(r.num)+'"><div class="'+badgeCls(r.num)+'">'+esc(r.num)+'</div><div class="who"><b>'+esc(dirLabel(r.cur))+(EXPRESS.test(r.num)?' · express':'')+'</b>';
+  if(soon)h+='<span>'+walkMin(r.sel.d)+' · '+esc(s[1])+'</span>'+swapBtn(r);
+  h+='</div><div class="t">';
+  if(!ev.length)h+='<span class="fini">Terminé</span>';
+  else if(!soon)h+=hhmm(Math.round(ev[0].m));
+  else{
+    var w=Math.round(ev[0].m-min);
+    h+=(ev[0].live?'<span class="live" title="En direct"></span>':'');
+    h+=w<=0?'<span class="n soon">Là</span>':'<span class="n'+(w<=5?' soon':'')+'">'+w+'</span><span class="u">min</span>';
+    if(ev.length>1)h+='<small>puis '+ev.slice(1,3).map(function(x){return shortWait(x,min)}).join(", ")+(Math.round(ev[Math.min(2,ev.length-1)].m-min)<60?' min':'')+'</small>';
+  }
+  return h+'</div></div>';
 }
 
 function nearestStations(n){
@@ -169,85 +184,87 @@ function nearestStations(n){
 function weekday(date){return new Date(Date.UTC(+date.slice(0,4),+date.slice(4,6)-1,+date.slice(6,8))).getUTCDay()}
 function freqText(t){
   var m=t.min,wd=weekday(t.date),sem=wd>0&&wd<6;
-  if(m>=60&&m<330)return"Fermé (ouvre vers 5 h 30)";
-  if(sem&&((m>=420&&m<570)||(m>=960&&m<1110)))return"Toutes les 3 à 5 min (heure de pointe)";
-  if(m>=1260||m<60)return"Toutes les 8 à 12 min (soirée)";
-  return"Toutes les 5 à 8 min";
+  if(m>=60&&m<330)return"fermé, ouvre vers 5 h 30";
+  if(sem&&((m>=420&&m<570)||(m>=960&&m<1110)))return"toutes les 3 à 5 min";
+  if(m>=1260||m<60)return"toutes les 8 à 12 min";
+  return"toutes les 5 à 8 min";
 }
-function stationCard(x,t){
+function stationRow(x,t){
   var m=x.m;
-  return '<div class="card metro"><div class="dots">'+m[3].map(function(l){var L=METRO[l]||{n:l,c:""};return '<span class="dot '+L.c+'" title="Ligne '+L.n+'">'+l+'</span>'}).join("")+'</div><div class="stophead"><b>'+esc(m[0])+'</b><span class="dist">'+fmtDist(x.d)+'</span></div><div></div><div class="freq">'+freqText(t)+'</div></div>';
+  return '<div class="r st1"><div class="dots">'+m[3].map(function(l){var L=METRO[l]||{n:l,c:""};return '<span class="dot '+L.c+'" title="Ligne '+L.n+'">'+l+'</span>'}).join("")+'</div><div class="who"><b>'+esc(m[0])+'</b><span>'+walkMin(x.d)+' · '+freqText(t)+'</span></div><div></div></div>';
 }
 
+var GROUPS={};
 function renderAutour(t){
   var res=routeGroups(t,state.radius),gs=res.groups;
-  var h='<section><div class="seg" role="group" aria-label="Rayon">'+[250,400,700].map(function(r){return '<button type="button" data-r="'+r+'" aria-pressed="'+(state.radius===r)+'">'+r+' m</button>'}).join("")+'</div></section>';
-  h+='<section><h2>Métro le plus proche</h2><div class="list">'+nearestStations(1).map(function(x){return stationCard(x,t)}).join("")+'</div></section>';
-  h+='<section><h2>Lignes de bus à proximité ('+gs.length+')</h2><div class="list">';
-  if(!gs.length)h+='<div class="card none">Aucune ligne dans ce rayon. Agrandis le rayon ou change de lieu.</div>';
-  gs.forEach(function(r){h+=routeCard(r,t.min)});
-  h+='</div></section>';
-  if(res.stops.length){
-    h+='<section><h2>Arrêts dans le rayon ('+res.stops.length+')</h2><div class="res">'+res.stops.slice(0,30).map(function(n){var s=R.stops[n.i];return '<button type="button" data-stop="'+n.i+'">'+esc(s[1])+' <span>'+fmtDist(n.d)+'</span></button>'}).join("")+'</div></section>';
-  }
+  GROUPS={};gs.forEach(function(r){GROUPS[r.num]=r});
+  var soon=gs.filter(function(r){return isSoon(r,t.min)}),later=gs.filter(function(r){return !isSoon(r,t.min)});
+  soon.sort(function(a,b){var fa=isFav(a.num)?0:1,fb=isFav(b.num)?0:1;return fa-fb||a.sel.ev[0].m-b.sel.ev[0].m});
+  var h='';
+  h+='<section><h2>Prochains départs</h2>';
+  if(!gs.length)h+='<div class="card none">Aucune ligne à moins de '+state.radius+' m. Touche « Changer » pour agrandir le rayon ou choisir un autre lieu.</div>';
+  else if(!soon.length)h+='<div class="card none">Aucun bus dans l\'heure tout près d\'ici.</div>';
+  else h+='<div class="rows">'+soon.map(function(r){return rowHTML(r,t.min)}).join("")+'</div>';
+  h+='</section>';
+  if(later.length)h+='<section><h2>Plus tard</h2><div class="rows later">'+later.map(function(r){return rowHTML(r,t.min)}).join("")+'</div></section>';
+  h+='<section><h2>Métro</h2><div class="rows">'+nearestStations(2).map(function(x){return stationRow(x,t)}).join("")+'</div>';
+  h+='<p class="foot" style="margin-top:8px"><a href="https://www.stm.info/fr/infos/etat-du-service" target="_blank" rel="noopener">État du service du métro</a> · fréquences approximatives : la licence de la STM ne permet pas d\'afficher les heures exactes du métro.</p></section>';
+  h+='<p class="foot">Touche une ligne pour voir tous ses passages, changer de sens ou l\'ajouter à tes lignes.</p>';
   return {html:h,codes:res.stops.slice(0,25).map(function(n){return R.stops[n.i][0]})};
 }
 
+/* Une ligne favorite, à l'arrêt le plus proche dans chaque sens, où qu'il soit */
+function favGroup(num,t){
+  var dirs={},name="";R.lines.forEach(function(l,i){if(l[0]===num){dirs[i]=1;name=name||l[2]}});
+  var g={num:num,name:name,dirs:{}};
+  for(var i=0;i<R.stops.length;i++){
+    var lst=stopEvents(i);
+    for(var k=0;k<lst.length;k++){var l=lst[k].l;if(!dirs[l])continue;var s=R.stops[i];var d=dist(state.place.lat,state.place.lon,s[2],s[3]);
+      var key=dirKey(R.lines[l][1]);if(!g.dirs[key]||d<g.dirs[key].d)g.dirs[key]={stop:i,d:d}}
+  }
+  Object.keys(g.dirs).forEach(function(key){
+    var d=g.dirs[key],ev=[],rt=false;
+    stopEvents(d.stop).forEach(function(e){var L=R.lines[e.l];if(L[0]!==num||dirKey(L[1])!==key)return;var up=upcoming(d.stop,e,t.min,L);if(up.length&&up[0].live){if(rt)return;rt=true}ev=ev.concat(up)});
+    d.ev=ev.sort(function(a,b){return a.m-b.m});
+  });
+  g.keys=Object.keys(g.dirs).sort();
+  g.cur=state.favDir[num];if(g.keys.indexOf(g.cur)<0)g.cur=g.keys[0];
+  g.sel=g.dirs[g.cur];
+  return g;
+}
 function renderLignes(t){
-  var codes=[];
-  var h='<section><h2>Mes lignes, à l\'arrêt le plus proche</h2><div class="list">';
-  if(!state.favs.length)h+='<div class="card none">Aucune ligne favorite. Touche l\'étoile sur une ligne dans « Autour de moi » pour l\'ajouter ici.</div>';
-  state.favs.forEach(function(num){
-    var dirs={};R.lines.forEach(function(l,i){if(l[0]===num)dirs[i]=1});
-    var best={},name="";
-    for(var i=0;i<R.stops.length;i++){
-      var lst=stopEvents(i);
-      for(var k=0;k<lst.length;k++){var l=lst[k].l;if(!dirs[l])continue;var s=R.stops[i];var d=dist(state.place.lat,state.place.lon,s[2],s[3]);
-        var key=dirKey(R.lines[l][1]);name=R.lines[l][2];
-        if(!best[key]||d<best[key].d)best[key]={i:i,d:d}}
-    }
-    if(!name)R.lines.some(function(l){if(l[0]===num){name=l[2];return true}});
-    var keys=Object.keys(best).sort();
-    var cur=state.favDir[num];if(keys.length&&keys.indexOf(cur)<0)cur=keys[0];
-    h+='<div class="card"><div class="stophead"><b>Ligne '+esc(num)+(name?' · '+esc(name):'')+'</b><button class="star" type="button" data-fav="'+esc(num)+'" aria-pressed="true" aria-label="Retirer la ligne '+esc(num)+' de mes lignes">'+STAR+'</button></div>';
-    if(keys.length>1)h+='<div class="seg" role="group" aria-label="Sens de la ligne '+esc(num)+'">'+keys.map(function(k){return '<button type="button" data-fd="'+esc(num)+'|'+esc(k)+'" aria-pressed="'+(k===cur)+'">Vers le '+esc(k.toLowerCase())+'</button>'}).join("")+'</div>';
-    if(!keys.length)h+='<div class="none">Pas de service aujourd\'hui selon l\'horaire.</div>';
-    keys.filter(function(k){return k===cur}).forEach(function(k){
-      var b=best[k],s=R.stops[b.i];codes.push(s[0]);
-      var rtShown=false;
-      stopEvents(b.i).filter(function(e){return R.lines[e.l][0]===num&&dirKey(R.lines[e.l][1])===k}).forEach(function(e){
-        var up=upcoming(b.i,e,t.min,R.lines[e.l]);
-        if(up.length&&up[0].live){if(rtShown)return;rtShown=true}
-        h+=depRow(R.lines[e.l],up,t.min);
-      });
-      h+='<button class="stoplink" style="text-align:left" type="button" data-stop="'+b.i+'">'+esc(s[1])+' · '+fmtDist(b.d)+'</button>';
+  var codes=[],h='<section><h2>Mes lignes</h2>';
+  var gs=state.favs.map(function(n){return favGroup(n,t)});
+  gs.forEach(function(g){if(!GROUPS[g.num])GROUPS[g.num]=g});
+  if(!state.favs.length)h+='<div class="card none">Aucune ligne favorite. Touche une ligne dans « Autour de moi », puis « Ajouter à mes lignes ».</div>';
+  else{
+    h+='<div class="rows">';
+    gs.forEach(function(g){
+      if(!g.sel){h+='<div class="r lt" data-line="'+esc(g.num)+'" role="button" tabindex="0"><div class="'+badgeCls(g.num)+'">'+esc(g.num)+'</div><div class="who"><b>'+esc(g.name)+'</b></div><div class="t"><span class="fini">Pas de service</span></div></div>';return}
+      codes.push(R.stops[g.sel.stop][0]);
+      var r=rowHTML(g,t.min);
+      if(!isSoon(g,t.min))r=r.replace('</b>','</b><span>'+walkMin(g.sel.d)+' · '+esc(R.stops[g.sel.stop][1])+'</span>'+swapBtn(g));
+      h+=r;
     });
     h+='</div>';
-  });
-  h+='</div></section><p class="foot">Le sens choisi est retenu sur ton téléphone et s\'applique aussi dans « Autour de moi ». Pour ajouter une ligne, touche son étoile dans « Autour de moi ».</p>';
+  }
+  h+='</section><p class="foot">Le sens choisi est retenu sur ton téléphone. Pour ajouter ou retirer une ligne, touche-la.</p>';
   return {html:h,codes:codes};
 }
-function depRow(line,up,min){
-  var r='<div class="dep"><div class="'+badgeCls(line[0])+'">'+esc(line[0])+'</div><div class="dir"><b>'+esc(vers(line[1]))+'</b></div><div class="mins">';
-  if(!up.length)r+='<span class="none">Plus de passage aujourd\'hui</span>';
-  else{
-    var w=Math.round(up[0].m-min);
-    if(up[0].live)r+='<span class="live" title="Temps réel"></span>';
-    if(w<=0)r+='<span class="n soon">Là</span>';
-    else if(w<60)r+='<span class="n'+(w<=5?' soon':'')+'">'+w+'</span> min';
-    else r+='<span class="n">'+hhmm(Math.round(up[0].m))+'</span>';
-    if(up.length>1)r+='<br>puis '+up.slice(1,3).map(function(x){return waitLbl(x,min)}).join(", ");
-  }
-  return r+'</div></div>';
-}
 
-function renderMetro(t){
-  var h='<section><h2>État du service</h2><div class="card">';
-  h+='<div class="none">L\'état du métro en direct arrivera avec le temps réel de la STM. En attendant :</div>';
-  h+='<a href="https://www.stm.info/fr/infos/etat-du-service" target="_blank" rel="noopener">Voir l\'état du service sur stm.info</a></div></section>';
-  h+='<section><h2>Stations à proximité</h2><div class="list">'+nearestStations(4).map(function(x){return stationCard(x,t)}).join("")+'</div></section>';
-  h+='<p class="foot">Pour le métro, on affiche la fréquence et l\'état du service, sans heures exactes : la licence de la STM ne permet pas de bâtir une appli sur les horaires du métro. Les fréquences sont approximatives.</p>';
-  return {html:h,codes:[]};
+function lineSheet(num){
+  var t=now(),g=(state.view==="lignes"||!GROUPS[num])?favGroup(num,t):GROUPS[num];
+  if(state.view!=="lignes"&&GROUPS[num]){var fresh=routeGroups(t,state.radius).groups.filter(function(x){return x.num===num})[0];if(fresh)g=fresh}
+  var h='<h3>Ligne '+esc(num)+(g.name?' · '+esc(g.name):'')+'</h3>';
+  h+='<button class="favbtn" type="button" data-fav="'+esc(num)+'" aria-pressed="'+isFav(num)+'">'+STAR+(isFav(num)?' Dans mes lignes (retirer)':' Ajouter à mes lignes')+'</button>';
+  if(g.keys&&g.keys.length>1)h+='<div class="seg" role="group" aria-label="Sens">'+g.keys.map(function(k){return '<button type="button" data-fd="'+esc(num)+'|'+esc(k)+'" aria-pressed="'+(k===g.cur)+'">'+esc(dirLabel(k))+'</button>'}).join("")+'</div>';
+  if(!g.sel){h+='<div class="none">Pas de service aujourd\'hui selon l\'horaire.</div>';openSheet(h,num);return}
+  var s=R.stops[g.sel.stop],ev=g.sel.ev;
+  h+='<div class="dist">Arrêt '+esc(s[1])+' ('+esc(s[0])+') · '+fmtDist(g.sel.d)+'</div>';
+  h+='<div class="times">'+(ev.length?ev.slice(0,40).map(function(x,j){return '<span'+(j===0?' class="first"':'')+'>'+(x.live?'● ':'')+hhmm(Math.round(x.m))+'</span>'}).join(""):'<span>Plus de passage aujourd\'hui</span>')+'</div>';
+  if(ev.some(function(x){return x.live}))h+='<p class="foot">● : heure en direct de la STM. Les autres sont les heures prévues.</p>';
+  h+='<button class="ibtn" style="color:var(--accent);border-color:var(--line);align-self:flex-start" type="button" data-stop="'+g.sel.stop+'">Tous les bus à cet arrêt</button>';
+  openSheet(h,num);
 }
 
 var lastCodes=[];
@@ -260,7 +277,7 @@ function paint(){
   if(!R)return;
   var v=document.getElementById("view");
   ready(t).then(function(ok){
-    var out=state.view==="autour"?renderAutour(t):state.view==="lignes"?renderLignes(t):renderMetro(t);
+    var out=state.view==="lignes"?renderLignes(t):renderAutour(t);
     var pre=ok?"":'<div class="card none">Les horaires d\'aujourd\'hui ne sont pas encore chargés. Ils se mettent à jour chaque nuit ; réessaie un peu plus tard.</div>';
     v.innerHTML=pre+out.html+'<p class="foot">Horaires : STM (données ouvertes, CC BY 4.0)'+(R.feed?', version '+esc(R.feed.slice(0,8)):'')+'.</p>';
     lastCodes=out.codes;
@@ -268,12 +285,14 @@ function paint(){
 }
 function renderClock(t){
   var live=RT.ok&&Date.now()-RT.at<120000;
-  document.getElementById("clockTxt").textContent=(t.sim?"Heure d'essai : ":"Maintenant : ")+hhmm(Math.floor(t.min))+" · "+(live?"temps réel":"horaires prévus");
+  document.getElementById("liveDot").hidden=!live;
+  document.getElementById("clockTxt").textContent=(t.sim?"Essai · ":"")+(live?"En direct":"Horaires prévus")+" · "+hhmm(Math.floor(t.min));
   document.getElementById("netTxt").textContent=navigator.onLine?"":"· hors ligne";
 }
 
 /* ---------- Feuilles (fenêtres du bas) ---------- */
-function openSheet(html){var p=document.getElementById("panel");p.innerHTML='<button class="close" type="button" data-close="1">Fermer</button>'+html;document.getElementById("sheet").hidden=false}
+var SHEET_LINE=null;
+function openSheet(html,line){SHEET_LINE=line||null;var p=document.getElementById("panel");p.innerHTML='<button class="close" type="button" data-close="1">Fermer</button>'+html;document.getElementById("sheet").hidden=false}
 function closeSheet(){document.getElementById("sheet").hidden=true}
 
 function stopSheet(i){
@@ -291,7 +310,7 @@ function stopSheet(i){
 }
 
 function placeSheet(){
-  openSheet('<h3>Choisir un lieu</h3><input type="search" id="q" placeholder="Rue, arrêt ou station (ex. Laurier, Jean-Talon)" autocomplete="off" enterkeyhint="search"><div class="res" id="res"><button type="button" data-gps="1">Ma position <span>GPS</span></button><button type="button" data-default="1">Mont-Royal / du Parc <span>par défaut</span></button></div>');
+  openSheet('<h3>Choisir un lieu</h3><input type="search" id="q" placeholder="Rue, arrêt ou station (ex. Laurier, Jean-Talon)" autocomplete="off" enterkeyhint="search"><div class="res" id="res"><button type="button" data-gps="1">Ma position <span>GPS</span></button><button type="button" data-default="1">Mont-Royal / du Parc <span>par défaut</span></button></div><h2 style="margin:6px 0 0">Distance de recherche</h2><div class="seg" role="group" aria-label="Rayon">'+[250,400,700].map(function(r){return '<button type="button" data-r="'+r+'" aria-pressed="'+(state.radius===r)+'">'+r+' m</button>'}).join("")+'</div>');
   var q=document.getElementById("q");
   q.addEventListener("input",function(){
     var v=norm(q.value).trim();if(v.length<2)return;
@@ -314,7 +333,7 @@ function nearestStopName(lat,lon){
   return best?best[1]:"Ma position";
 }
 function locate(manual){
-  var btn=document.getElementById("btnLocate");
+  var btn=document.getElementById("btnPlace");
   if(!navigator.geolocation){if(manual)toast("Le GPS n'est pas disponible sur cet appareil.");return}
   btn.classList.add("busy");
   navigator.geolocation.getCurrentPosition(function(p){
@@ -347,16 +366,16 @@ document.addEventListener("click",function(e){
   if((b=e.target.closest("[data-fav]"))){
     var n=b.dataset.fav,i=state.favs.indexOf(n);
     if(i>=0){state.favs.splice(i,1);toast("Ligne "+n+" retirée de tes lignes.")}else{state.favs.push(n);toast("Ligne "+n+" ajoutée à tes lignes.")}
-    store("bm_favs",state.favs);paint();return;
+    store("bm_favs",state.favs);paint();if(SHEET_LINE&&!document.getElementById("sheet").hidden)lineSheet(SHEET_LINE);return;
   }
-  if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");state.favDir[f[0]]=f[1];store("bm_favdir",state.favDir);paint();return}
-  if((b=e.target.closest("[data-r]"))){state.radius=+b.dataset.r;store("bm_radius",state.radius);paint();refreshRealtime();return}
+  if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");state.favDir[f[0]]=f[1];store("bm_favdir",state.favDir);paint();if(SHEET_LINE===f[0]&&!document.getElementById("sheet").hidden)lineSheet(f[0]);return}
+  if((b=e.target.closest("[data-line]"))){lineSheet(b.dataset.line);return}
+  if((b=e.target.closest("[data-r]"))){state.radius=+b.dataset.r;store("bm_radius",state.radius);b.parentNode.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});paint();refreshRealtime();return}
   if((b=e.target.closest("nav.tabs [data-v]"))){state.view=b.dataset.v;store("bm_view",state.view);paint();window.scrollTo(0,0);setTimeout(refreshRealtime,50);return}
   if((b=e.target.closest("[data-install]"))){if(installEvt){installEvt.prompt();installEvt=null;document.getElementById("banner").innerHTML=""}return}
 });
-document.addEventListener("keydown",function(e){if(e.key==="Escape")closeSheet()});
+document.addEventListener("keydown",function(e){if(e.key==="Escape")closeSheet();var r=e.target.closest&&e.target.closest("[data-line]");if(r&&(e.key==="Enter"||e.key===" ")){e.preventDefault();lineSheet(r.dataset.line)}});
 document.getElementById("btnPlace").onclick=placeSheet;
-document.getElementById("btnLocate").onclick=function(){state.gps=true;store("bm_gps",true);state.place.gps=false;locate(true)};
 window.addEventListener("online",paint);window.addEventListener("offline",paint);
 
 function refreshRealtime(){fetchRealtime(lastCodes)}
