@@ -19,6 +19,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import sys
 import zipfile
 from zoneinfo import ZoneInfo
@@ -68,6 +69,20 @@ def nom_station(n):
     return " ".join(n.split())
 
 
+def nom_arret(s):
+    """Nom lisible d'un arrêt. Le RTC nomme ses arrêts « Champlain/1006 » : on prend alors la description."""
+    n = s["stop_name"].strip()
+    if re.search(r"/\s*\d+$", n):
+        n = (s.get("stop_desc") or "").strip() or re.sub(r"/\s*\d+$", "", n)
+    return " ".join(n.split())
+
+
+def sens_affiche(h):
+    """« Gare fluviale (Sud) » devient « Sud Gare fluviale » : l'app regroupe les sens par le premier mot."""
+    m = re.match(r"^(.*?)\s*\((Nord|Sud|Est|Ouest)\)\s*$", h)
+    return m.group(2) + " " + m.group(1) if m else h
+
+
 def construire(chemin_zip, sortie, nb_jours=FUSEAU_JOURS, debut=None):
     os.makedirs(sortie, exist_ok=True)
     z = zipfile.ZipFile(chemin_zip)
@@ -89,11 +104,11 @@ def construire(chemin_zip, sortie, nb_jours=FUSEAU_JOURS, debut=None):
             continue
         r = routes[t["route_id"]]
         num = (r.get("route_short_name") or r["route_id"]).strip()
-        sens = (t.get("trip_headsign") or "").strip() or "Direction " + (t.get("direction_id") or "0")
+        sens = sens_affiche((t.get("trip_headsign") or "").strip()) or "Direction " + (t.get("direction_id") or "0")
         cle = (num, sens)
         if cle not in idx_ligne:
             idx_ligne[cle] = len(lignes)
-            lignes.append([num, sens, (r.get("route_long_name") or "").strip()])
+            lignes.append([num, sens, (r.get("route_long_name") or r.get("route_desc") or "").strip()])
         trip_ligne[tid] = idx_ligne[cle]
 
     arrets = {s["stop_id"]: s for s in lire(z, "stops.txt")}
@@ -117,7 +132,8 @@ def construire(chemin_zip, sortie, nb_jours=FUSEAU_JOURS, debut=None):
         h = st.get("departure_time") or st.get("arrival_time")
         if not h:
             continue
-        par_voyage[tid].append((int(st["stop_sequence"]), st["stop_id"], minutes(h), st.get("pickup_type", "0") != "1"))
+        pick = st.get("pickup_type", st.get(" pickup_type")) or "0"
+        par_voyage[tid].append((int(st["stop_sequence"]), st["stop_id"], minutes(h), pick.strip() != "1"))
 
     # Arrêts de bus réellement desservis
     ids_arrets = sorted({p[1] for v in par_voyage.values() for p in v})
@@ -125,7 +141,7 @@ def construire(chemin_zip, sortie, nb_jours=FUSEAU_JOURS, debut=None):
     stops_out = []
     for sid in ids_arrets:
         s = arrets[sid]
-        stops_out.append([(s.get("stop_code") or sid).strip(), s["stop_name"].strip(), round(float(s["stop_lat"]), 5), round(float(s["stop_lon"]), 5)])
+        stops_out.append([(s.get("stop_code") or sid).strip(), nom_arret(s), round(float(s["stop_lat"]), 5), round(float(s["stop_lon"]), 5)])
 
     # Voyages compactés : on retire le terminus (on n'y monte pas) et les arrêts sans montée
     # Parcours : pour chaque sens de ligne, les suites d'arrêts les plus courantes

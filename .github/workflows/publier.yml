@@ -33,6 +33,13 @@ jobs:
           ls -la gtfs_stm.zip
       - name: Préparer les données
         run: python3 outils/construire_donnees.py gtfs_stm.zip site/donnees 14
+      - name: Horaires du RTC (Québec)
+        # Si le RTC est indisponible, on publie quand même Montréal.
+        continue-on-error: true
+        run: |
+          curl -fsSL --retry 4 --retry-delay 10 -o gtfs_rtc.zip https://cdn.rtcquebec.ca/Site_Internet/DonneesOuvertes/googletransit.zip
+          ls -la gtfs_rtc.zip
+          python3 outils/construire_donnees.py gtfs_rtc.zip site/donnees/rtc 14
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

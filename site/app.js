@@ -3,27 +3,37 @@
 
 /* ---------- Réglages ---------- */
 var CFG=window.BM_CONFIG||{};
-var DEFAULT={name:"Mont-Royal / du Parc",lat:45.51672,lon:-73.58925};
-var DEFAULT_FAVS=["80","480","129"];
-var EXPRESS=/^4\d\d$/;
+/* Les villes : chacune a son dossier de données. On choisit la plus proche du GPS. */
+var VILLES={
+  stm:{nom:"Montréal",reseau:"STM",dir:"donnees/",centre:{lat:45.53,lon:-73.65},rayon:40000,
+    lieu:{name:"Mont-Royal / du Parc",lat:45.51672,lon:-73.58925},favs:["80","480","129"],direct:true,express:/^4\d\d$/},
+  rtc:{nom:"Québec",reseau:"RTC",dir:"donnees/rtc/",centre:{lat:46.81,lon:-71.25},rayon:35000,
+    lieu:{name:"Château Frontenac",lat:46.81181,lon:-71.20526},favs:[],direct:false,express:/^$/}
+};
 var METRO={1:{n:"Verte",c:"l1"},2:{n:"Orange",c:"l2"},4:{n:"Jaune",c:"l4"},5:{n:"Bleue",c:"l5"}};
-var MTL={lat:45.53,lon:-73.65};
 var WALK=80; // mètres par minute à pied
 
 /* ---------- Petit stockage sur le téléphone ---------- */
 function store(k,v){try{if(v===undefined){var x=localStorage.getItem(k);return x?JSON.parse(x):null}localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
 
+var VILLE="stm",V=VILLES.stm;
 var state={
-  place:DEFAULT, gps:true, view:"autour", radius:400,
-  favs:DEFAULT_FAVS.slice(), favDir:{}, lastFix:0
+  place:V.lieu, gps:true, view:"autour", radius:400,
+  favs:V.favs.slice(), favDir:{}, lastFix:0
 };
+/* Le lieu, les lignes favorites et les sens sont retenus séparément pour chaque ville */
+function cle(k){return VILLE==="stm"?k:k+"_"+VILLE}
+function restoreVille(){
+  var p=store(cle("bm_place"));state.place=p&&typeof p.lat==="number"?p:V.lieu;
+  var f=store(cle("bm_favs"));state.favs=Array.isArray(f)?f:V.favs.slice();
+  var d=store(cle("bm_favdir"))||(VILLE==="stm"&&store("pp_favdir"));state.favDir=d&&typeof d==="object"?d:{};
+}
 (function restore(){
-  var p=store("bm_place"); if(p&&typeof p.lat==="number")state.place=p;
+  var c=store("bm_ville");if(VILLES[c]){VILLE=c;V=VILLES[c]}
+  restoreVille();
   var g=store("bm_gps"); if(g===false)state.gps=false;
   var v=store("bm_view"); if(v==="lignes")state.view=v;
   var r=store("bm_radius"); if(r)state.radius=r;
-  var f=store("bm_favs"); if(Array.isArray(f))state.favs=f;
-  var d=store("bm_favdir")||store("pp_favdir"); if(d&&typeof d==="object")state.favDir=d;
 })();
 
 /* Mode essai : ?date=AAAAMMJJ&heure=HH:MM pour regarder un autre moment */
@@ -61,14 +71,16 @@ function loadGrid(date){
   var key=JOURS[date];
   if(!key)return Promise.resolve(null);
   if(GRIDS[key])return Promise.resolve(GRIDS[key]);
-  return getJSON("donnees/passages-"+key+".json").then(function(a){
+  return getJSON(V.dir+"passages-"+key+".json").then(function(a){
     GRIDS[key]=a.map(function(lst){return lst.map(function(e){var t=[],acc=0;for(var i=1;i<e.length;i++){acc+=e[i];t.push(acc)}return{l:e[0],t:t}})});
     return GRIDS[key];
   });
 }
 function ready(t){
+  var v=VILLE;
   return Promise.all([loadGrid(t.date),loadGrid(prevDate(t.date))]).then(function(g){
-    if(MERGED.date!==t.date)MERGED={date:t.date,cache:{},today:g[0],yday:g[1]};
+    if(v!==VILLE)throw "ville";
+    if(MERGED.date!==t.date||MERGED.v!==v)MERGED={date:t.date,v:v,cache:{},today:g[0],yday:g[1]};
     return !!(g[0]||g[1]);
   });
 }
@@ -86,7 +98,7 @@ function stopEvents(i){
 var RT={at:0,data:{},ok:false};
 function rtFor(stopCode,lineNum){return RT.ok?RT.data[stopCode+"|"+lineNum]:null}
 function fetchRealtime(codes){
-  if(!CFG.relaisTempsReel||!codes.length||document.hidden||SIM)return;
+  if(!CFG.relaisTempsReel||!V.direct||!codes.length||document.hidden||SIM)return;
   var url=CFG.relaisTempsReel.replace(/\/$/,"")+"/passages?arrets="+encodeURIComponent(codes.slice(0,40).join(","));
   fetch(url).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(d){
     RT={at:Date.now(),data:d.passages||{},ok:true};paint();
@@ -95,7 +107,7 @@ function fetchRealtime(codes){
 
 /* ---------- Calculs ---------- */
 function isFav(num){return state.favs.indexOf(num)>=0}
-function badgeCls(num){return isFav(num)?"badge fav":EXPRESS.test(num)?"badge exp":"badge"}
+function badgeCls(num){return isFav(num)?"badge fav":V.express.test(num)?"badge exp":"badge"}
 function nearStops(lat,lon,radius){
   var res=[];for(var i=0;i<R.stops.length;i++){var s=R.stops[i];var d=dist(lat,lon,s[2],s[3]);if(d<=radius)res.push({i:i,d:d})}
   return res.sort(function(a,b){return a.d-b.d});
@@ -164,7 +176,7 @@ function swapBtn(r){
 function isSoon(r,min){var e=r.sel.ev[0];return !!e&&e.m-min<60}
 function rowHTML(r,min){
   var s=R.stops[r.sel.stop],ev=r.sel.ev,soon=isSoon(r,min);
-  var h='<div class="r'+(soon?'':' lt')+'" role="button" tabindex="0" data-line="'+esc(r.num)+'"><div class="'+badgeCls(r.num)+'">'+esc(r.num)+'</div><div class="who"><b>'+esc(dirLabel(r.cur))+(EXPRESS.test(r.num)?' · express':'')+'</b>';
+  var h='<div class="r'+(soon?'':' lt')+'" role="button" tabindex="0" data-line="'+esc(r.num)+'"><div class="'+badgeCls(r.num)+'">'+esc(r.num)+'</div><div class="who"><b>'+esc(dirLabel(r.cur))+(V.express.test(r.num)?' · express':'')+'</b>';
   if(soon)h+='<span>'+walkMin(r.sel.d)+' · '+esc(s[1])+'</span>'+swapBtn(r);
   h+='</div><div class="t">';
   if(!ev.length)h+='<span class="fini">Terminé</span>';
@@ -207,8 +219,8 @@ function renderAutour(t){
   else h+='<div class="rows">'+soon.map(function(r){return rowHTML(r,t.min)}).join("")+'</div>';
   h+='</section>';
   if(later.length)h+='<section><h2>Plus tard</h2><div class="rows later">'+later.map(function(r){return rowHTML(r,t.min)}).join("")+'</div></section>';
-  h+='<section><h2>Métro</h2><div class="rows">'+nearestStations(2).map(function(x){return stationRow(x,t)}).join("")+'</div>';
-  h+='<p class="foot" style="margin-top:8px"><a href="https://www.stm.info/fr/infos/etat-du-service" target="_blank" rel="noopener">État du service du métro</a> · fréquences approximatives : la licence de la STM ne permet pas d\'afficher les heures exactes du métro.</p></section>';
+  if(R.metro.length){h+='<section><h2>Métro</h2><div class="rows">'+nearestStations(2).map(function(x){return stationRow(x,t)}).join("")+'</div>';
+  h+='<p class="foot" style="margin-top:8px"><a href="https://www.stm.info/fr/infos/etat-du-service" target="_blank" rel="noopener">État du service du métro</a> · fréquences approximatives : la licence de la STM ne permet pas d\'afficher les heures exactes du métro.</p></section>';}
   h+='<p class="foot">Touche une ligne pour voir tous ses passages, changer de sens ou l\'ajouter à tes lignes.</p>';
   return {html:h,codes:res.stops.slice(0,25).map(function(n){return R.stops[n.i][0]})};
 }
@@ -264,7 +276,7 @@ function lineSheet(num,pick){
   SHEET_EV=ev;SHEET_STOP=g.sel.stop;
   h+='<div class="dist">Arrêt '+esc(s[1])+' ('+esc(s[0])+') · '+fmtDist(g.sel.d)+'</div>';
   h+='<div class="times" role="group" aria-label="Passages, touche une heure pour voir le trajet">'+(ev.length?ev.slice(0,8).map(function(x,j){return '<button type="button" data-trip="'+j+'"'+(j===j0?' class="first" aria-pressed="true"':' aria-pressed="false"')+'>'+(x.live?'● ':'')+hhmm(Math.round(x.m))+'</button>'}).join(""):'<span>Plus de passage aujourd\'hui</span>')+'</div>';
-  if(ev.some(function(x){return x.live}))h+='<p class="foot">● : heure en direct de la STM. Les autres sont les heures prévues. Touche une heure pour voir le trajet de ce bus.</p>';
+  if(ev.some(function(x){return x.live}))h+='<p class="foot">● : heure en direct de la '+V.reseau+'. Les autres sont les heures prévues. Touche une heure pour voir le trajet de ce bus.</p>';
   else if(ev.length)h+='<p class="foot">Touche une heure pour voir le trajet de ce bus.</p>';
   if(ev.length)h+='<div id="trajet" class="trajet"><div class="none">Chargement du trajet…</div></div>';
   h+='<button class="ibtn" style="color:var(--accent);border-color:var(--line);align-self:flex-start" type="button" data-stop="'+g.sel.stop+'">Toute la journée à cet arrêt</button>';
@@ -276,7 +288,7 @@ function lineSheet(num,pick){
 var PARC=null,CODE=null;
 function loadParcours(){
   if(PARC)return Promise.resolve(PARC);
-  return getJSON("donnees/parcours.json").then(function(p){PARC=p;return p});
+  return getJSON(V.dir+"parcours.json").then(function(p){PARC=p;return p});
 }
 function codeIndex(c){
   if(!CODE){CODE={};R.stops.forEach(function(s,i){CODE[s[0]]=i})}
@@ -307,7 +319,7 @@ function showTrip(j){
   };
   box.innerHTML='<div class="none">Chargement du trajet…</div>';
   var fallback=function(){loadParcours().then(function(){render(staticTrip(stop,x.l,Math.round(x.m)),false)}).catch(function(){render(null)})};
-  if(x.live&&CFG.relaisTempsReel){
+  if(x.live&&CFG.relaisTempsReel&&V.direct){
     var url=CFG.relaisTempsReel.replace(/\/$/,"")+"/voyage?arret="+encodeURIComponent(R.stops[stop][0])+"&ligne="+encodeURIComponent(line[0])+"&t="+x.t;
     fetch(url).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(d){
       if(!d.arrets||!d.arrets.length)throw 0;
@@ -331,9 +343,9 @@ function paint(){
   ready(t).then(function(ok){
     var out=state.view==="lignes"?renderLignes(t):renderAutour(t);
     var pre=ok?"":'<div class="card none">Les horaires d\'aujourd\'hui ne sont pas encore chargés. Ils se mettent à jour chaque nuit ; réessaie un peu plus tard.</div>';
-    v.innerHTML=pre+out.html+'<p class="foot">Horaires : STM (données ouvertes, CC BY 4.0)'+(R.feed?', version '+esc(R.feed.slice(0,8)):'')+'.</p>';
+    v.innerHTML=pre+out.html+'<p class="foot">Horaires : '+V.reseau+' (données ouvertes'+(VILLE==="stm"?', CC BY 4.0':'')+')'+(R.feed?', version '+esc(R.feed.slice(0,8)):'')+'.</p>';
     lastCodes=out.codes;
-  }).catch(function(){v.innerHTML='<div class="card none">Impossible de charger les horaires. Vérifie ta connexion et rouvre l\'app.</div>'});
+  }).catch(function(e){if(e==="ville")return;if(window.console)console.error(e);v.innerHTML='<div class="card none">Impossible de charger les horaires. Vérifie ta connexion et rouvre l\'app.</div>'});
 }
 function renderClock(t){
   var live=RT.ok&&Date.now()-RT.at<120000;
@@ -362,7 +374,7 @@ function stopSheet(i){
 }
 
 function placeSheet(){
-  openSheet('<h3>Choisir un lieu</h3><input type="search" id="q" placeholder="Rue, arrêt ou station (ex. Laurier, Jean-Talon)" autocomplete="off" enterkeyhint="search"><div class="res" id="res"><button type="button" data-gps="1">Ma position <span>GPS</span></button><button type="button" data-default="1">Mont-Royal / du Parc <span>par défaut</span></button></div><h2 style="margin:6px 0 0">Distance de recherche</h2><div class="seg" role="group" aria-label="Rayon">'+[250,400,700].map(function(r){return '<button type="button" data-r="'+r+'" aria-pressed="'+(state.radius===r)+'">'+r+' m</button>'}).join("")+'</div>');
+  openSheet('<h3>Choisir un lieu</h3><input type="search" id="q" placeholder="Rue, arrêt ou station (ex. Laurier, Jean-Talon)" autocomplete="off" enterkeyhint="search"><div class="res" id="res"><button type="button" data-gps="1">Ma position <span>GPS</span></button><button type="button" data-default="1">'+esc(V.lieu.name)+' <span>par défaut</span></button></div><h2 style="margin:6px 0 0">Ville</h2><div class="seg" role="group" aria-label="Ville">'+Object.keys(VILLES).map(function(k){return '<button type="button" data-ville="'+k+'" aria-pressed="'+(k===VILLE)+'">'+VILLES[k].nom+' ('+VILLES[k].reseau+')</button>'}).join("")+'</div><h2 style="margin:6px 0 0">Distance de recherche</h2><div class="seg" role="group" aria-label="Rayon">'+[250,400,700].map(function(r){return '<button type="button" data-r="'+r+'" aria-pressed="'+(state.radius===r)+'">'+r+' m</button>'}).join("")+'</div>');
   var q=document.getElementById("q");
   q.addEventListener("input",function(){
     var v=norm(q.value).trim();if(v.length<2)return;
@@ -375,7 +387,7 @@ function placeSheet(){
 
 function toast(msg){var el=document.getElementById("toast");el.textContent=msg;el.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(function(){el.hidden=true},4500)}
 function setPlace(p,gps){
-  state.place=p;state.gps=!!gps;store("bm_place",p);store("bm_gps",state.gps);
+  state.place=p;state.gps=!!gps;store(cle("bm_place"),p);store("bm_gps",state.gps);
   closeSheet();paint();window.scrollTo(0,0);setTimeout(refreshRealtime,50);
 }
 
@@ -392,7 +404,9 @@ function locate(manual){
     btn.classList.remove("busy");
     var lat=p.coords.latitude,lon=p.coords.longitude;
     state.lastFix=Date.now();
-    if(dist(lat,lon,MTL.lat,MTL.lon)>40000){if(manual)toast("Tu sembles hors de Montréal. On garde le lieu actuel.");return}
+    var vk=villeDe(lat,lon);
+    if(!vk){if(manual)toast("Tu sembles hors de Montréal et de Québec. On garde le lieu actuel.");return}
+    if(vk!==VILLE){changerVille(vk).then(function(){if(VILLE!==vk){paint();return}toast("Bienvenue à "+V.nom+" : horaires du "+V.reseau+".");setPlace({name:nearestStopName(lat,lon),lat:lat,lon:lon,gps:true},true)});return}
     var moved=!state.place.gps||dist(lat,lon,state.place.lat,state.place.lon)>30;
     if(!moved&&state.gps)return;
     setPlace({name:R?nearestStopName(lat,lon):"Ma position",lat:lat,lon:lon,gps:true},true);
@@ -412,15 +426,16 @@ document.addEventListener("click",function(e){
   if((b=e.target.closest("[data-close]"))||e.target.id==="sheet"){closeSheet();return}
   if((b=e.target.closest("[data-setplace]"))){var s=R.stops[+b.dataset.setplace];setPlace({name:s[1],lat:s[2],lon:s[3]});return}
   if((b=e.target.closest("[data-metro]"))){var m=R.metro[+b.dataset.metro];setPlace({name:"Station "+m[0],lat:m[1],lon:m[2]});return}
-  if((b=e.target.closest("[data-default]"))){setPlace(DEFAULT);return}
+  if((b=e.target.closest("[data-default]"))){setPlace(V.lieu);return}
+  if((b=e.target.closest("[data-ville]"))){var vk=b.dataset.ville;if(vk!==VILLE){closeSheet();state.gps=false;store("bm_gps",false);changerVille(vk).then(function(){if(VILLE===vk)setPlace(V.lieu);else paint()})}else closeSheet();return}
   if((b=e.target.closest("[data-gps]"))){closeSheet();state.gps=true;store("bm_gps",true);state.place.gps=false;locate(true);return}
   if((b=e.target.closest("[data-stop]"))){stopSheet(+b.dataset.stop);return}
   if((b=e.target.closest("[data-fav]"))){
     var n=b.dataset.fav,i=state.favs.indexOf(n);
     if(i>=0){state.favs.splice(i,1);toast("Ligne "+n+" retirée de tes lignes.")}else{state.favs.push(n);toast("Ligne "+n+" ajoutée à tes lignes.")}
-    store("bm_favs",state.favs);paint();if(SHEET_LINE&&!document.getElementById("sheet").hidden)lineSheet(SHEET_LINE);return;
+    store(cle("bm_favs"),state.favs);paint();if(SHEET_LINE&&!document.getElementById("sheet").hidden)lineSheet(SHEET_LINE);return;
   }
-  if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");state.favDir[f[0]]=f[1];store("bm_favdir",state.favDir);paint();if(SHEET_LINE===f[0]&&!document.getElementById("sheet").hidden)lineSheet(f[0]);return}
+  if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");state.favDir[f[0]]=f[1];store(cle("bm_favdir"),state.favDir);paint();if(SHEET_LINE===f[0]&&!document.getElementById("sheet").hidden)lineSheet(f[0]);return}
   if((b=e.target.closest("[data-line]"))){lineSheet(b.dataset.line);return}
   if((b=e.target.closest("[data-trip]"))){showTrip(+b.dataset.trip);return}
   if((b=e.target.closest("[data-r]"))){state.radius=+b.dataset.r;store("bm_radius",state.radius);b.parentNode.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});paint();refreshRealtime();return}
@@ -458,10 +473,31 @@ if("serviceWorker" in navigator&&location.protocol!=="file:"){
 }
 var reloading=false;
 
+/* ---------- Villes ---------- */
+function villeDe(lat,lon){
+  var best=null,bd=1e12;
+  Object.keys(VILLES).forEach(function(k){var c=VILLES[k],d=dist(lat,lon,c.centre.lat,c.centre.lon);if(d<=c.rayon&&d<bd){bd=d;best=k}});
+  return best;
+}
+function chargerVille(){
+  return Promise.all([getJSON(V.dir+"reseau.json"),getJSON(V.dir+"jours.json")]).then(function(d){R=d[0];JOURS=d[1]});
+}
+function changerVille(k){
+  var avant=VILLE;
+  return basculer(k).catch(function(){toast("Les horaires de "+VILLES[k].nom+" ne sont pas disponibles pour l'instant.");return basculer(avant)});
+}
+function basculer(k){
+  VILLE=k;V=VILLES[k];store("bm_ville",k);
+  R=null;JOURS={};GRIDS={};MERGED={date:null,cache:{}};PARC=null;CODE=null;GROUPS={};RT={at:0,data:{},ok:false};lastCodes=[];
+  var gps=state.gps;restoreVille();state.gps=gps;
+  document.getElementById("view").innerHTML='<div class="card none">Chargement des horaires de '+V.nom+'…</div>';
+  return chargerVille();
+}
+
 /* ---------- Démarrage ---------- */
 paint();
-Promise.all([getJSON("donnees/reseau.json"),getJSON("donnees/jours.json")]).then(function(d){
-  R=d[0];JOURS=d[1];paint();
+chargerVille().catch(function(e){if(VILLE==="stm")throw e;return basculer("stm")}).then(function(){
+  paint();
   if(state.gps)locate(false);
   setTimeout(refreshRealtime,300);
 }).catch(function(){document.getElementById("view").innerHTML='<div class="card none">Impossible de charger le réseau. Vérifie ta connexion et rouvre l\'app.</div>'});
