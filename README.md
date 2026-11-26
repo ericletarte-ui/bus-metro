@@ -16,6 +16,6 @@ Pour essayer à un autre moment : ajouter `?date=AAAAMMJJ&heure=HH:MM` à l'adre
 
 ## Temps réel
 
-Le temps réel des bus passera par un petit relais côté serveur qui garde la clé de la STM secrète. Aucune clé ne doit être mise dans ce dépôt public. L'adresse du relais se règle dans `site/config.js`.
+Le temps réel des bus passera par un petit relais côté serveur qui garde la clé de la STM secrète. Aucune clé ne doit être mise dans ce dépôt public. L.adresse du relais se règle dans `site/config.js`. Le code du relais est dans `relais/worker.js` (Cloudflare Worker, secret `STM_CLE`).
 
 Données : Société de transport de Montréal, données ouvertes, licence CC BY 4.0.

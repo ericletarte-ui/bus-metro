@@ -1,5 +1,5 @@
 /* Service worker : garde l'app et les horaires sur le téléphone pour qu'elle s'ouvre vite, même sans réseau. */
-var VERSION = "bm-v1";
+var VERSION = "bm-v2";
 var COQUILLE = [
   "./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest",
   "icones/icone-192.png", "icones/icone-512.png", "icones/favicon-32.png"
