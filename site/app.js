@@ -171,12 +171,13 @@ function shortWait(x,min){var d=Math.round(x.m-min);return d<60?String(Math.max(
 function swapBtn(r){
   if(r.keys.length<2)return "";
   var nk=r.keys[(r.keys.indexOf(r.cur)+1)%r.keys.length];
-  return '<button class="swap" type="button" data-fd="'+esc(r.num)+'|'+esc(nk)+'" aria-label="Afficher la ligne '+esc(r.num)+' '+esc(dirLabel(nk).toLowerCase())+'">⇅ '+esc(dirLabel(nk).replace(/^Vers /,"Voir "))+'</button>';
+  return '<span class="swap" aria-hidden="true">⇆ glisse '+esc(dirLabel(nk).replace(/^Vers /,"pour "))+'</span>';
 }
 function isSoon(r,min){var e=r.sel.ev[0];return !!e&&e.m-min<60}
+function nextKey(r){return r.keys.length<2?"":r.keys[(r.keys.indexOf(r.cur)+1)%r.keys.length]}
 function rowHTML(r,min){
-  var s=R.stops[r.sel.stop],ev=r.sel.ev,soon=isSoon(r,min);
-  var h='<div class="r'+(soon?'':' lt')+'" role="button" tabindex="0" data-line="'+esc(r.num)+'"><div class="'+badgeCls(r.num)+'">'+esc(r.num)+'</div><div class="who"><b>'+esc(dirLabel(r.cur))+(V.express.test(r.num)?' · express':V.vert.test(r.num)?' · Métrobus':'')+'</b>';
+  var s=R.stops[r.sel.stop],ev=r.sel.ev,soon=isSoon(r,min),nk=nextKey(r);
+  var h='<div class="r'+(soon?'':' lt')+'" role="button" tabindex="0" data-line="'+esc(r.num)+'"'+(nk?' data-sw="'+esc(r.num)+'|'+esc(nk)+'"':'')+'><div class="'+badgeCls(r.num)+'">'+esc(r.num)+'</div><div class="who"><b>'+esc(dirLabel(r.cur))+(V.express.test(r.num)?' · express':V.vert.test(r.num)?' · Métrobus':'')+'</b>';
   if(soon)h+='<span>'+walkMin(r.sel.d)+' · '+esc(s[1])+'</span>'+swapBtn(r);
   h+='</div><div class="t">';
   if(!ev.length)h+='<span class="fini">Terminé</span>';
@@ -279,11 +280,14 @@ function lineSheet(num,pick){
   if(!g.sel){h+='<div class="none">Pas de service aujourd\'hui selon l\'horaire.</div>';openSheet(h,num);return}
   var s=R.stops[g.sel.stop],ev=g.sel.ev,j0=Math.min(pick||0,Math.max(0,ev.length-1));
   SHEET_EV=ev;SHEET_STOP=g.sel.stop;
+  var nks=g.keys&&g.keys.length>1?g.keys[(g.keys.indexOf(g.cur)+1)%g.keys.length]:"";
+  h+='<div class="swz"'+(nks?' data-sw="'+esc(num)+'|'+esc(nks)+'"':'')+'>';
   h+='<div class="dist">Arrêt '+esc(s[1])+' ('+esc(s[0])+') · '+fmtDist(g.sel.d)+'</div>';
   h+='<div class="times" role="group" aria-label="Passages, touche une heure pour voir le trajet">'+(ev.length?ev.slice(0,8).map(function(x,j){return '<button type="button" data-trip="'+j+'"'+(j===j0?' class="first" aria-pressed="true"':' aria-pressed="false"')+'>'+(x.live?'● ':'')+hhmm(Math.round(x.m))+'</button>'}).join(""):'<span>Plus de passage aujourd\'hui</span>')+'</div>';
   if(ev.some(function(x){return x.live}))h+='<p class="foot">● : heure en direct de la '+V.reseau+'. Les autres sont les heures prévues. Touche une heure pour voir le trajet de ce bus.</p>';
   else if(ev.length)h+='<p class="foot">Touche une heure pour voir le trajet de ce bus.</p>';
   if(ev.length)h+='<div id="trajet" class="trajet"><div class="none">Chargement du trajet…</div></div>';
+  h+='</div>';
   h+='<button class="ibtn" style="color:var(--accent);border-color:var(--line);align-self:flex-start" type="button" data-stop="'+g.sel.stop+'">Toute la journée à cet arrêt</button>';
   openSheet(h,num);
   if(ev.length)showTrip(j0);
@@ -431,6 +435,31 @@ function locate(manual){
 }
 
 /* ---------- Événements ---------- */
+function choisirSens(num,k){
+  state.favDir[num]=k;store(cle("bm_favdir"),state.favDir);paint();
+  if(SHEET_LINE===num&&!document.getElementById("sheet").hidden)lineSheet(num);
+}
+/* Glisser le doigt de côté sur une ligne (ou dans son détail) pour changer de sens */
+var SW=null,SW_BLOCK=0;
+document.addEventListener("touchstart",function(e){
+  var el=e.target.closest&&e.target.closest("[data-sw]");
+  SW=el&&e.touches.length===1?{el:el,x:e.touches[0].clientX,y:e.touches[0].clientY,h:null}:null;
+},{passive:true});
+document.addEventListener("touchmove",function(e){
+  if(!SW)return;var dx=e.touches[0].clientX-SW.x,dy=e.touches[0].clientY-SW.y;
+  if(SW.h===null&&(Math.abs(dx)>10||Math.abs(dy)>10))SW.h=Math.abs(dx)>Math.abs(dy)*1.3;
+  if(SW.h){e.preventDefault();SW.el.style.transform="translateX("+Math.max(-90,Math.min(90,dx*0.6))+"px)";SW.el.style.opacity=String(1-Math.min(Math.abs(dx),150)/400)}
+},{passive:false});
+document.addEventListener("touchend",function(e){
+  if(!SW)return;var s=SW;SW=null;
+  s.el.style.transition="transform .15s, opacity .15s";s.el.style.transform="";s.el.style.opacity="";
+  setTimeout(function(){s.el.style.transition=""},200);
+  if(!s.h)return;
+  SW_BLOCK=Date.now();
+  var dx=(e.changedTouches[0]||{}).clientX-s.x;
+  if(Math.abs(dx)>=60){var f=s.el.dataset.sw.split("|");if(navigator.vibrate)try{navigator.vibrate(12)}catch(_){}choisirSens(f[0],f[1])}
+});
+document.addEventListener("click",function(e){if(Date.now()-SW_BLOCK<400){e.stopPropagation();e.preventDefault()}},true);
 document.addEventListener("click",function(e){
   var b;
   if((b=e.target.closest("[data-close]"))||e.target.id==="sheet"){closeSheet();return}
@@ -445,7 +474,7 @@ document.addEventListener("click",function(e){
     if(i>=0){state.favs.splice(i,1);toast("Ligne "+n+" retirée de tes lignes.")}else{state.favs.push(n);toast("Ligne "+n+" ajoutée à tes lignes.")}
     store(cle("bm_favs"),state.favs);paint();if(SHEET_LINE&&!document.getElementById("sheet").hidden)lineSheet(SHEET_LINE);return;
   }
-  if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");state.favDir[f[0]]=f[1];store(cle("bm_favdir"),state.favDir);paint();if(SHEET_LINE===f[0]&&!document.getElementById("sheet").hidden)lineSheet(f[0]);return}
+  if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");choisirSens(f[0],f[1]);return}
   if((b=e.target.closest("[data-line]"))){lineSheet(b.dataset.line);return}
   if((b=e.target.closest("[data-trip]"))){showTrip(+b.dataset.trip);return}
   if((b=e.target.closest("[data-r]"))){state.radius=+b.dataset.r;store(cle("bm_radius"),state.radius);b.parentNode.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});paint();refreshRealtime();return}
