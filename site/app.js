@@ -8,7 +8,7 @@ var VILLES={
   stm:{nom:"Montréal",reseau:"STM",dir:"donnees/",centre:{lat:45.53,lon:-73.65},rayon:40000,
     lieu:{name:"Mont-Royal / du Parc",lat:45.51672,lon:-73.58925},favs:["80","480","129"],direct:true,rayons:[250,400,700],rayonDefaut:400,express:/^4\d\d$/,vert:/^$/},
   rtc:{nom:"Québec",reseau:"RTC",dir:"donnees/rtc/",centre:{lat:46.81,lon:-71.25},rayon:35000,
-    lieu:{name:"Château Frontenac",lat:46.81181,lon:-71.20526},favs:[],direct:false,rayons:[300,550,800],rayonDefaut:550,express:/^$/,vert:/^80\d$/}
+    lieu:{name:"Château Frontenac",lat:46.81181,lon:-71.20526},favs:["800","801"],direct:false,rayons:[300,550,800],rayonDefaut:550,express:/^$/,vert:/^80\d$/}
 };
 var METRO={1:{n:"Verte",c:"l1"},2:{n:"Orange",c:"l2"},4:{n:"Jaune",c:"l4"},5:{n:"Bleue",c:"l5"}};
 var WALK=80; // mètres par minute à pied
@@ -26,6 +26,8 @@ function cle(k){return VILLE==="stm"?k:k+"_"+VILLE}
 function restoreVille(){
   var p=store(cle("bm_place"));state.place=p&&typeof p.lat==="number"?p:V.lieu;
   var f=store(cle("bm_favs"));state.favs=Array.isArray(f)?f:V.favs.slice();
+  /* Une seule fois : ajouter 800 et 801 aux lignes de Québec déjà enregistrées (demande d'Éric, 27 nov. 2026) */
+  if(VILLE==="rtc"&&Array.isArray(f)&&!store("bm_ajout_rtc1")){["800","801"].forEach(function(n){if(state.favs.indexOf(n)<0)state.favs.push(n)});store(cle("bm_favs"),state.favs);store("bm_ajout_rtc1",true)}
   var r=store(cle("bm_radius"));state.radius=V.rayons.indexOf(r)>=0?r:V.rayonDefaut;
   var d=store(cle("bm_favdir"))||(VILLE==="stm"&&store("pp_favdir"));state.favDir=d&&typeof d==="object"?d:{};
 }
