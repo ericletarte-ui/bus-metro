@@ -7,6 +7,7 @@ on:
     branches: [main]
   schedule:
     - cron: "17 8 * * *"   # vers 3 h 17, heure de Montréal
+    - cron: "43 10 * * *"  # deuxième passage vers 5 h 43, au cas où le premier serait sauté
   workflow_dispatch:
 
 permissions:

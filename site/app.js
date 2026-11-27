@@ -353,7 +353,8 @@ function paint(){
   var v=document.getElementById("view");
   ready(t).then(function(ok){
     var out=state.view==="lignes"?renderLignes(t):renderAutour(t);
-    var pre=ok?"":'<div class="card none">Les horaires d\'aujourd\'hui ne sont pas encore chargés. Ils se mettent à jour chaque nuit ; réessaie un peu plus tard.</div>';
+    var vieux=R.genere&&Date.now()-Date.parse(R.genere.replace("Z",":00Z"))>40*3600e3;
+    var pre=ok&&vieux?'<div class="card none">Attention : les horaires n\'ont pas été mis à jour depuis le '+esc(jourTxt(R.genere.slice(0,10)))+'. Ils peuvent avoir changé.</div>':ok?"":'<div class="card none">Les horaires d\'aujourd\'hui ne sont pas encore chargés. Ils se mettent à jour chaque nuit ; réessaie un peu plus tard.</div>';
     v.innerHTML=pre+out.html+'<p class="foot">'+esc(fraicheur())+'<br>'+credit()+'</p>';
     lastCodes=out.codes;
   }).catch(function(e){if(e==="ville")return;if(window.console)console.error(e);v.innerHTML='<div class="card none">Impossible de charger les horaires. Vérifie ta connexion et rouvre l\'app.</div>'});
