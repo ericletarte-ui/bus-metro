@@ -208,16 +208,21 @@ function stationRow(x,t){
 
 var GROUPS={};
 function renderAutour(t){
-  var res=routeGroups(t,state.radius),gs=res.groups;
-  GROUPS={};gs.forEach(function(r){GROUPS[r.num]=r});
+  /* On cherche aussi un peu plus loin (jusqu'à 2 fois le rayon) pour ne pas rater une grande ligne à quelques rues */
+  var loin=Math.min(state.radius*2,900),res=routeGroups(t,loin),tous=res.groups;
+  var proche=function(r){return Object.keys(r.dirs).some(function(k){return r.dirs[k].d<=state.radius})};
+  var gs=tous.filter(proche);
+  var plusLoin=tous.filter(function(r){return !proche(r)&&isSoon(r,t.min)}).sort(function(a,b){return a.sel.d-b.sel.d}).slice(0,4);
+  GROUPS={};tous.forEach(function(r){GROUPS[r.num]=r});
   var soon=gs.filter(function(r){return isSoon(r,t.min)}),later=gs.filter(function(r){return !isSoon(r,t.min)});
   soon.sort(function(a,b){var fa=isFav(a.num)?0:1,fb=isFav(b.num)?0:1;return fa-fb||a.sel.ev[0].m-b.sel.ev[0].m});
   var h='';
   h+='<section><h2>Prochains départs</h2>';
-  if(!gs.length)h+='<div class="card none">Aucune ligne à moins de '+state.radius+' m. Touche « Changer » pour agrandir le rayon ou choisir un autre lieu.</div>';
+  if(!gs.length&&!plusLoin.length)h+='<div class="card none">Aucune ligne à moins de '+state.radius+' m. Touche « Changer » pour agrandir le rayon ou choisir un autre lieu.</div>';
   else if(!soon.length)h+='<div class="card none">Aucun bus dans l\'heure tout près d\'ici.</div>';
   else h+='<div class="rows">'+soon.map(function(r){return rowHTML(r,t.min)}).join("")+'</div>';
   h+='</section>';
+  if(plusLoin.length)h+='<section><h2>Un peu plus loin</h2><div class="rows">'+plusLoin.map(function(r){return rowHTML(r,t.min)}).join("")+'</div></section>';
   if(later.length)h+='<section><h2>Plus tard</h2><div class="rows later">'+later.map(function(r){return rowHTML(r,t.min)}).join("")+'</div></section>';
   if(R.metro.length){h+='<section><h2>Métro</h2><div class="rows">'+nearestStations(2).map(function(x){return stationRow(x,t)}).join("")+'</div>';
   h+='<p class="foot" style="margin-top:8px"><a href="https://www.stm.info/fr/infos/etat-du-service" target="_blank" rel="noopener">État du service du métro</a> · fréquences approximatives : la licence de la STM ne permet pas d\'afficher les heures exactes du métro.</p></section>';}
@@ -267,7 +272,7 @@ function renderLignes(t){
 var SHEET_EV=null,SHEET_STOP=null;
 function lineSheet(num,pick){
   var t=now(),g=(state.view==="lignes"||!GROUPS[num])?favGroup(num,t):GROUPS[num];
-  if(state.view!=="lignes"&&GROUPS[num]){var fresh=routeGroups(t,state.radius).groups.filter(function(x){return x.num===num})[0];if(fresh)g=fresh}
+  if(state.view!=="lignes"&&GROUPS[num]){var fresh=routeGroups(t,Math.min(state.radius*2,900)).groups.filter(function(x){return x.num===num})[0];if(fresh)g=fresh}
   var h='<h3>Ligne '+esc(num)+(g.name?' · '+esc(g.name):'')+'</h3>';
   h+='<button class="favbtn" type="button" data-fav="'+esc(num)+'" aria-pressed="'+isFav(num)+'">'+STAR+(isFav(num)?' Dans mes lignes (retirer)':' Ajouter à mes lignes')+'</button>';
   if(g.keys&&g.keys.length>1)h+='<div class="seg" role="group" aria-label="Sens">'+g.keys.map(function(k){return '<button type="button" data-fd="'+esc(num)+'|'+esc(k)+'" aria-pressed="'+(k===g.cur)+'">'+esc(dirLabel(k))+'</button>'}).join("")+'</div>';
