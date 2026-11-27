@@ -49,6 +49,7 @@ h2{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute
 .badge{font-family:var(--f-num);font-weight:700;font-size:22px;line-height:1;background:var(--ink);color:var(--surface);border-radius:8px;padding:5px 0 4px;text-align:center;min-width:52px}
 .badge.fav{background:var(--accent);color:var(--accent-ink)}
 .badge.exp{background:var(--warn);color:var(--surface)}
+.badge.mb{background:var(--m1);color:#fff}
 .dir{min-width:0;font-size:14px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dir b{color:var(--ink);font-weight:700}
 .mins{font-family:var(--f-num);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;font-size:15px;color:var(--muted)}

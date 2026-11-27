@@ -6,9 +6,9 @@ var CFG=window.BM_CONFIG||{};
 /* Les villes : chacune a son dossier de données. On choisit la plus proche du GPS. */
 var VILLES={
   stm:{nom:"Montréal",reseau:"STM",dir:"donnees/",centre:{lat:45.53,lon:-73.65},rayon:40000,
-    lieu:{name:"Mont-Royal / du Parc",lat:45.51672,lon:-73.58925},favs:["80","480","129"],direct:true,rayons:[250,400,700],rayonDefaut:400,express:/^4\d\d$/},
+    lieu:{name:"Mont-Royal / du Parc",lat:45.51672,lon:-73.58925},favs:["80","480","129"],direct:true,rayons:[250,400,700],rayonDefaut:400,express:/^4\d\d$/,vert:/^$/},
   rtc:{nom:"Québec",reseau:"RTC",dir:"donnees/rtc/",centre:{lat:46.81,lon:-71.25},rayon:35000,
-    lieu:{name:"Château Frontenac",lat:46.81181,lon:-71.20526},favs:[],direct:false,rayons:[300,550,800],rayonDefaut:550,express:/^$/}
+    lieu:{name:"Château Frontenac",lat:46.81181,lon:-71.20526},favs:[],direct:false,rayons:[300,550,800],rayonDefaut:550,express:/^$/,vert:/^80\d$/}
 };
 var METRO={1:{n:"Verte",c:"l1"},2:{n:"Orange",c:"l2"},4:{n:"Jaune",c:"l4"},5:{n:"Bleue",c:"l5"}};
 var WALK=80; // mètres par minute à pied
@@ -107,7 +107,7 @@ function fetchRealtime(codes){
 
 /* ---------- Calculs ---------- */
 function isFav(num){return state.favs.indexOf(num)>=0}
-function badgeCls(num){return isFav(num)?"badge fav":V.express.test(num)?"badge exp":"badge"}
+function badgeCls(num){return V.vert.test(num)?"badge mb":isFav(num)?"badge fav":V.express.test(num)?"badge exp":"badge"}
 function nearStops(lat,lon,radius){
   var res=[];for(var i=0;i<R.stops.length;i++){var s=R.stops[i];var d=dist(lat,lon,s[2],s[3]);if(d<=radius)res.push({i:i,d:d})}
   return res.sort(function(a,b){return a.d-b.d});
@@ -176,7 +176,7 @@ function swapBtn(r){
 function isSoon(r,min){var e=r.sel.ev[0];return !!e&&e.m-min<60}
 function rowHTML(r,min){
   var s=R.stops[r.sel.stop],ev=r.sel.ev,soon=isSoon(r,min);
-  var h='<div class="r'+(soon?'':' lt')+'" role="button" tabindex="0" data-line="'+esc(r.num)+'"><div class="'+badgeCls(r.num)+'">'+esc(r.num)+'</div><div class="who"><b>'+esc(dirLabel(r.cur))+(V.express.test(r.num)?' · express':'')+'</b>';
+  var h='<div class="r'+(soon?'':' lt')+'" role="button" tabindex="0" data-line="'+esc(r.num)+'"><div class="'+badgeCls(r.num)+'">'+esc(r.num)+'</div><div class="who"><b>'+esc(dirLabel(r.cur))+(V.express.test(r.num)?' · express':V.vert.test(r.num)?' · Métrobus':'')+'</b>';
   if(soon)h+='<span>'+walkMin(r.sel.d)+' · '+esc(s[1])+'</span>'+swapBtn(r);
   h+='</div><div class="t">';
   if(!ev.length)h+='<span class="fini">Terminé</span>';
