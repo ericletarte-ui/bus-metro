@@ -6,9 +6,9 @@ var CFG=window.BM_CONFIG||{};
 /* Les villes : chacune a son dossier de données. On choisit la plus proche du GPS. */
 var VILLES={
   stm:{nom:"Montréal",reseau:"STM",dir:"donnees/",centre:{lat:45.53,lon:-73.65},rayon:40000,
-    lieu:{name:"Mont-Royal / du Parc",lat:45.51672,lon:-73.58925},favs:["80","480","129"],direct:true,express:/^4\d\d$/},
+    lieu:{name:"Mont-Royal / du Parc",lat:45.51672,lon:-73.58925},favs:["80","480","129"],direct:true,rayons:[250,400,700],rayonDefaut:400,express:/^4\d\d$/},
   rtc:{nom:"Québec",reseau:"RTC",dir:"donnees/rtc/",centre:{lat:46.81,lon:-71.25},rayon:35000,
-    lieu:{name:"Château Frontenac",lat:46.81181,lon:-71.20526},favs:[],direct:false,express:/^$/}
+    lieu:{name:"Château Frontenac",lat:46.81181,lon:-71.20526},favs:[],direct:false,rayons:[300,550,800],rayonDefaut:550,express:/^$/}
 };
 var METRO={1:{n:"Verte",c:"l1"},2:{n:"Orange",c:"l2"},4:{n:"Jaune",c:"l4"},5:{n:"Bleue",c:"l5"}};
 var WALK=80; // mètres par minute à pied
@@ -26,6 +26,7 @@ function cle(k){return VILLE==="stm"?k:k+"_"+VILLE}
 function restoreVille(){
   var p=store(cle("bm_place"));state.place=p&&typeof p.lat==="number"?p:V.lieu;
   var f=store(cle("bm_favs"));state.favs=Array.isArray(f)?f:V.favs.slice();
+  var r=store(cle("bm_radius"));state.radius=V.rayons.indexOf(r)>=0?r:V.rayonDefaut;
   var d=store(cle("bm_favdir"))||(VILLE==="stm"&&store("pp_favdir"));state.favDir=d&&typeof d==="object"?d:{};
 }
 (function restore(){
@@ -33,7 +34,6 @@ function restoreVille(){
   restoreVille();
   var g=store("bm_gps"); if(g===false)state.gps=false;
   var v=store("bm_view"); if(v==="lignes")state.view=v;
-  var r=store("bm_radius"); if(r)state.radius=r;
 })();
 
 /* Mode essai : ?date=AAAAMMJJ&heure=HH:MM pour regarder un autre moment */
@@ -384,7 +384,7 @@ function stopSheet(i){
 }
 
 function placeSheet(){
-  openSheet('<h3>Choisir un lieu</h3><input type="search" id="q" placeholder="Rue, arrêt ou station (ex. Laurier, Jean-Talon)" autocomplete="off" enterkeyhint="search"><div class="res" id="res"><button type="button" data-gps="1">Ma position <span>GPS</span></button><button type="button" data-default="1">'+esc(V.lieu.name)+' <span>par défaut</span></button></div><h2 style="margin:6px 0 0">Ville</h2><div class="seg" role="group" aria-label="Ville">'+Object.keys(VILLES).map(function(k){return '<button type="button" data-ville="'+k+'" aria-pressed="'+(k===VILLE)+'">'+VILLES[k].nom+' ('+VILLES[k].reseau+')</button>'}).join("")+'</div><h2 style="margin:6px 0 0">Distance de recherche</h2><div class="seg" role="group" aria-label="Rayon">'+[250,400,700].map(function(r){return '<button type="button" data-r="'+r+'" aria-pressed="'+(state.radius===r)+'">'+r+' m</button>'}).join("")+'</div>');
+  openSheet('<h3>Choisir un lieu</h3><input type="search" id="q" placeholder="Rue, arrêt ou station (ex. Laurier, Jean-Talon)" autocomplete="off" enterkeyhint="search"><div class="res" id="res"><button type="button" data-gps="1">Ma position <span>GPS</span></button><button type="button" data-default="1">'+esc(V.lieu.name)+' <span>par défaut</span></button></div><h2 style="margin:6px 0 0">Ville</h2><div class="seg" role="group" aria-label="Ville">'+Object.keys(VILLES).map(function(k){return '<button type="button" data-ville="'+k+'" aria-pressed="'+(k===VILLE)+'">'+VILLES[k].nom+' ('+VILLES[k].reseau+')</button>'}).join("")+'</div><h2 style="margin:6px 0 0">Distance de recherche</h2><div class="seg" role="group" aria-label="Rayon">'+V.rayons.map(function(r){return '<button type="button" data-r="'+r+'" aria-pressed="'+(state.radius===r)+'">'+r+' m</button>'}).join("")+'</div>');
   var q=document.getElementById("q");
   q.addEventListener("input",function(){
     var v=norm(q.value).trim();if(v.length<2)return;
@@ -448,7 +448,7 @@ document.addEventListener("click",function(e){
   if((b=e.target.closest("[data-fd]"))){var f=b.dataset.fd.split("|");state.favDir[f[0]]=f[1];store(cle("bm_favdir"),state.favDir);paint();if(SHEET_LINE===f[0]&&!document.getElementById("sheet").hidden)lineSheet(f[0]);return}
   if((b=e.target.closest("[data-line]"))){lineSheet(b.dataset.line);return}
   if((b=e.target.closest("[data-trip]"))){showTrip(+b.dataset.trip);return}
-  if((b=e.target.closest("[data-r]"))){state.radius=+b.dataset.r;store("bm_radius",state.radius);b.parentNode.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});paint();refreshRealtime();return}
+  if((b=e.target.closest("[data-r]"))){state.radius=+b.dataset.r;store(cle("bm_radius"),state.radius);b.parentNode.querySelectorAll("button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});paint();refreshRealtime();return}
   if((b=e.target.closest("nav.tabs [data-v]"))){state.view=b.dataset.v;store("bm_view",state.view);paint();window.scrollTo(0,0);setTimeout(refreshRealtime,50);return}
   if((b=e.target.closest("[data-install]"))){if(installEvt){installEvt.prompt();installEvt=null;document.getElementById("banner").innerHTML=""}return}
 });
