@@ -291,6 +291,7 @@ function lineSheet(num,pick){
   if(ev.length)h+='<div id="trajet" class="trajet"><div class="none">Chargement du trajet…</div></div>';
   h+='</div>';
   h+='<button class="ibtn" style="color:var(--accent);border-color:var(--line);align-self:flex-start" type="button" data-stop="'+g.sel.stop+'">Toute la journée à cet arrêt</button>';
+  if(VILLE==="rtc")h+='<a class="ibtn" style="color:var(--accent);border-color:var(--line);align-self:flex-start;text-decoration:none" href="https://www.rtcquebec.ca/horaires-et-trajets/horaires-des-bus/tous-les-parcours/'+encodeURIComponent(s[0])+'" target="_blank" rel="noopener">Temps réel sur le site du RTC ↗</a>';
   openSheet(h,num);
   if(ev.length)showTrip(j0);
 }
