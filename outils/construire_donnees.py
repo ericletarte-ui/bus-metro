@@ -214,14 +214,16 @@ def construire(chemin_zip, sortie, nb_jours=FUSEAU_JOURS, debut=None):
             faits[servs] = cle
         jours[d.strftime("%Y%m%d")] = faits[servs]
 
-    version = ""
+    version, valide = "", ["", ""]
     for r in lire(z, "feed_info.txt"):
         version = r.get("feed_version", "") or r.get("feed_start_date", "")
+        valide = [r.get("feed_start_date", ""), r.get("feed_end_date", "")]
     reseau = {
         "lines": lignes,
         "stops": stops_out,
         "metro": metro_out,
         "feed": version,
+        "valide": valide,
         "genere": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
     }
     with open(os.path.join(sortie, "reseau.json"), "w", encoding="utf-8") as f:

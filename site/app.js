@@ -354,11 +354,20 @@ function paint(){
   ready(t).then(function(ok){
     var out=state.view==="lignes"?renderLignes(t):renderAutour(t);
     var pre=ok?"":'<div class="card none">Les horaires d\'aujourd\'hui ne sont pas encore chargés. Ils se mettent à jour chaque nuit ; réessaie un peu plus tard.</div>';
-    v.innerHTML=pre+out.html+'<p class="foot">'+credit()+'</p>';
+    v.innerHTML=pre+out.html+'<p class="foot">'+esc(fraicheur())+'<br>'+credit()+'</p>';
     lastCodes=out.codes;
   }).catch(function(e){if(e==="ville")return;if(window.console)console.error(e);v.innerHTML='<div class="card none">Impossible de charger les horaires. Vérifie ta connexion et rouvre l\'app.</div>'});
 }
-function dateFeed(){var f=String(R.feed||"");return /^\d{8}/.test(f)?f.slice(6,8).replace(/^0/,"")+" "+["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"][+f.slice(4,6)-1]+" "+f.slice(0,4):f}
+var MOIS=["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+function jourTxt(f,an){f=String(f||"").replace(/-/g,"");return /^\d{8}/.test(f)?f.slice(6,8).replace(/^0/,"")+" "+MOIS[+f.slice(4,6)-1]+(an===false?"":" "+f.slice(0,4)):""}
+function dateFeed(){return jourTxt(R.feed)||String(R.feed||"")}
+/* D'où viennent les horaires et jusqu'à quand ils sont valides */
+function fraicheur(){
+  var v=R.valide||[],h="";
+  if(R.genere)h+="Horaires téléchargés du site officiel du "+V.reseau+" le "+jourTxt(R.genere.slice(0,10))+". ";
+  if(v[0]&&v[1])h+="Ils couvrent la période du "+jourTxt(v[0],false)+" au "+jourTxt(v[1])+".";
+  return h;
+}
 function credit(){
   if(VILLE==="rtc")return "Application intégrant de l'information publique du Réseau de transport de la Capitale, mise à jour le "+esc(dateFeed())+".";
   return "Horaires : STM (données ouvertes, CC BY 4.0)"+(R.feed?", version "+esc(String(R.feed).slice(0,8)):"")+".";
