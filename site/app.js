@@ -109,6 +109,8 @@ function fetchRealtime(codes){
 
 /* ---------- Calculs ---------- */
 function isFav(num){return state.favs.indexOf(num)>=0}
+/* Ordre d'affichage : Métrobus (Québec) d'abord, puis lignes favorites, puis le reste */
+function prio(num){return V.vert.test(num)?0:isFav(num)?1:2}
 function badgeCls(num){return V.vert.test(num)?"badge mb":isFav(num)?"badge fav":V.express.test(num)?"badge exp":"badge"}
 function nearStops(lat,lon,radius){
   var res=[];for(var i=0;i<R.stops.length;i++){var s=R.stops[i];var d=dist(lat,lon,s[2],s[3]);if(d<=radius)res.push({i:i,d:d})}
@@ -145,7 +147,7 @@ function routeGroups(t,radius){
     r.keys=keys;r.cur=cur;r.sel=r.dirs[cur];return r;
   });
   out.sort(function(a,b){
-    var fa=isFav(a.num)?0:1,fb=isFav(b.num)?0:1;
+    var fa=prio(a.num),fb=prio(b.num);
     if(fa!==fb)return fa-fb;
     var rank=function(r){var e=r.sel.ev[0];return !e?2:(e.m-t.min<60?0:1)};var ea=rank(a),eb=rank(b);if(ea!==eb)return ea-eb;
     return a.sel.d-b.sel.d||((a.sel.ev[0]||{m:1e9}).m-(b.sel.ev[0]||{m:1e9}).m);
@@ -213,12 +215,12 @@ var GROUPS={};
 function renderAutour(t){
   /* On cherche aussi un peu plus loin (jusqu'à 2 fois le rayon) pour ne pas rater une grande ligne à quelques rues */
   var loin=Math.min(state.radius*2,900),res=routeGroups(t,loin),tous=res.groups;
-  var proche=function(r){return Object.keys(r.dirs).some(function(k){return r.dirs[k].d<=state.radius})};
+  var proche=function(r){return V.vert.test(r.num)&&isSoon(r,t.min)||Object.keys(r.dirs).some(function(k){return r.dirs[k].d<=state.radius})};
   var gs=tous.filter(proche);
-  var plusLoin=tous.filter(function(r){return !proche(r)&&isSoon(r,t.min)}).sort(function(a,b){return a.sel.d-b.sel.d}).slice(0,4);
+  var plusLoin=tous.filter(function(r){return !proche(r)&&isSoon(r,t.min)}).sort(function(a,b){return prio(a.num)-prio(b.num)||a.sel.d-b.sel.d}).slice(0,4);
   GROUPS={};tous.forEach(function(r){GROUPS[r.num]=r});
   var soon=gs.filter(function(r){return isSoon(r,t.min)}),later=gs.filter(function(r){return !isSoon(r,t.min)});
-  soon.sort(function(a,b){var fa=isFav(a.num)?0:1,fb=isFav(b.num)?0:1;return fa-fb||a.sel.ev[0].m-b.sel.ev[0].m});
+  soon.sort(function(a,b){return prio(a.num)-prio(b.num)||a.sel.ev[0].m-b.sel.ev[0].m});
   var h='';
   h+='<section><h2>Prochains départs</h2>';
   if(!gs.length&&!plusLoin.length)h+='<div class="card none">Aucune ligne à moins de '+state.radius+' m. Touche « Changer » pour agrandir le rayon ou choisir un autre lieu.</div>';
@@ -254,7 +256,7 @@ function favGroup(num,t){
 }
 function renderLignes(t){
   var codes=[],h='<section><h2>Mes lignes</h2>';
-  var gs=state.favs.map(function(n){return favGroup(n,t)});
+  var gs=state.favs.slice().sort(function(a,b){return (V.vert.test(a)?0:1)-(V.vert.test(b)?0:1)}).map(function(n){return favGroup(n,t)});
   gs.forEach(function(g){if(!GROUPS[g.num])GROUPS[g.num]=g});
   if(!state.favs.length)h+='<div class="card none">Aucune ligne favorite. Touche une ligne dans « Autour de moi », puis « Ajouter à mes lignes ».</div>';
   else{
